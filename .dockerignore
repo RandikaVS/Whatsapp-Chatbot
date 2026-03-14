@@ -1,0 +1,24 @@
+# .dockerignore
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+.env
+.env.*
+*.env
+.venv
+venv/
+env/
+.git
+.gitignore
+.github
+*.md
+*.log
+.pytest_cache
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+.DS_Store
