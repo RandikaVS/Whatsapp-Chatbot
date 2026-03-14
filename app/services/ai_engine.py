@@ -4,7 +4,6 @@ from google.genai import types
 from app.services.session import SessionService
 from app.services.catalog import build_system_prompt_with_catalog
 from app.models import Tenant
-from app.database import get_db_sync   # sync version for background tasks
 import logging
 
 logger = logging.getLogger(__name__)
@@ -12,17 +11,11 @@ logger = logging.getLogger(__name__)
 
 async def generate_ai_reply(
     user_text: str,
-    phone: str,
     tenant: Tenant,
-    db
+    db,
+    phone: str = "0000000000",
 ) -> str:
-    """
-    Full AI reply generation:
-    1. Loads tenant's system prompt + live product catalog
-    2. Loads conversation history from Redis
-    3. Calls Gemini with full context
-    4. Returns reply and saves history
-    """
+
     from app.config import settings
 
     client = genai.Client(api_key=settings.GEMINI_API_KEY)
@@ -55,12 +48,12 @@ async def generate_ai_reply(
 
     try:
         response = client.models.generate_content(
-            model=tenant.ai_model or "gemini-2.0-flash",
+            model="gemini-3-flash-preview",
             contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=system_prompt,
-                max_output_tokens=500,
-                temperature=0.7,
+                # max_output_tokens=500,
+                # temperature=0.7,
             ),
         )
 

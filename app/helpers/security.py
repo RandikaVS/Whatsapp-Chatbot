@@ -33,44 +33,35 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
-def generate_access_token(subject: str) -> str:
+# app/helpers/security.py — update these two functions
+
+def generate_access_token(subject: str, token_type: str = "access") -> str:
     """
-    Creates a signed JWT token that encodes the admin's ID.
-    
-    A JWT has three parts: header.payload.signature
-    - The payload contains: who this is for (sub), when it expires (exp)
-    - The signature is created using your JWT_SECRET_KEY — only your server
-      can create or verify valid tokens
-    - The token is NOT encrypted — anyone can read the payload,
-      but they cannot forge a new token without the JWT_SECRET_KEY
+    token_type can be "access" (for admins) or "tenant" (for business clients).
+    Embedding the type in the token means the dependency can reject the wrong
+    type of token without even hitting the database.
     """
     expire = datetime.now(timezone.utc) + timedelta(
         minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
     )
     payload = {
-        "sub": subject,        # subject — the admin's UUID as a string
-        "exp": expire,         # expiry — JWT library enforces this automatically
-        "type": "access",      # custom claim so we can distinguish access vs refresh
+        "sub":  subject,
+        "exp":  expire,
+        "type": token_type,   # "access" for admins, "tenant" for clients
     }
-    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
-def generate_refresh_token(subject: str) -> str:
-    """
-    A refresh token lives longer than an access token (e.g. 7 days vs 30 minutes).
-    When the access token expires, the frontend sends the refresh token to get
-    a new access token — without asking the user to log in again.
-    """
+def generate_refresh_token(subject: str, token_type: str = "refresh") -> str:
     expire = datetime.now(timezone.utc) + timedelta(
         days=settings.REFRESH_TOKEN_EXPIRE_DAYS
     )
     payload = {
-        "sub": subject,
-        "exp": expire,
-        "type": "refresh",
+        "sub":  subject,
+        "exp":  expire,
+        "type": token_type,
     }
-    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
-
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 def decode_token(token: str) -> dict:
     """

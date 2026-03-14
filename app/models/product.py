@@ -33,4 +33,4 @@ class Product(Base):
     
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    tenant = relationship("Tenant", back_populates="products")
+    # tenant = relationship("Tenant", back_populates="products")

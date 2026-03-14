@@ -335,3 +335,226 @@ FROM products p
 JOIN tenants t ON t.id = p.tenant_id
 WHERE t.email = 'test@abcshoes.lk'
 ORDER BY p.category, p.name;
+
+
+
+
+
+-- ============================================================
+-- CONVERSATIONS TABLE
+-- One row = one chat thread between a customer phone number
+-- and one tenant's WhatsApp bot.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS conversations (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    -- Cascade delete: when a tenant is removed, all their
+    -- conversation data disappears automatically. No orphaned rows.
+    tenant_id           UUID NOT NULL
+                            REFERENCES tenants(id) ON DELETE CASCADE,
+
+    -- The end customer's number, stored without the + symbol
+    -- to match exactly how Meta sends it in webhook payloads.
+    -- e.g. "94750688759" not "+94750688759"
+    customer_phone      VARCHAR(20) NOT NULL,
+    customer_name       VARCHAR(200),
+
+    -- The AI pause button. When TRUE, process_and_reply returns
+    -- immediately without calling Gemini.
+    is_human_takeover   BOOLEAN NOT NULL DEFAULT FALSE,
+
+    -- Cached message count avoids a slow COUNT(*) query every time
+    -- the dashboard loads the conversation list.
+    message_count       INTEGER NOT NULL DEFAULT 0,
+
+    started_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_message_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- This is the most important index in your entire system.
+-- Every single incoming message triggers a lookup like:
+--   "find the conversation for tenant X and phone Y"
+-- Without this index, Postgres scans every row in the table.
+-- With it, the lookup is essentially instant even with millions of rows.
+CREATE INDEX IF NOT EXISTS idx_conversations_tenant_phone
+    ON conversations (tenant_id, customer_phone);
+
+-- Secondary index for the dashboard query:
+-- "show me all conversations for tenant X, newest first"
+CREATE INDEX IF NOT EXISTS idx_conversations_tenant_recent
+    ON conversations (tenant_id, last_message_at DESC);
+
+-- ============================================================
+-- MESSAGES TABLE
+-- One row = one message bubble in a conversation.
+-- Both customer messages (role='user') and AI replies
+-- (role='assistant') are stored here.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS messages (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    -- Cascade delete: removing a conversation removes all its messages.
+    conversation_id     UUID NOT NULL
+                            REFERENCES conversations(id) ON DELETE CASCADE,
+
+    -- Enforced at the database level: only these two values allowed.
+    -- This prevents a bug in your application code from inserting
+    -- a message with role='system' or role='bot' by accident.
+    role                VARCHAR(20) NOT NULL
+                            CHECK (role IN ('user', 'assistant')),
+
+    -- TEXT has no length limit in PostgreSQL — safer than VARCHAR
+    -- because long AI responses will never silently truncate.
+    content             TEXT NOT NULL,
+
+    message_type        VARCHAR(50) NOT NULL DEFAULT 'text',
+
+    -- UNIQUE constraint is your database-level deduplication safety net.
+    -- Even if your application code has a bug, the database will never
+    -- store the same WhatsApp message twice.
+    -- NULL values are excluded from uniqueness checks in PostgreSQL,
+    -- so multiple rows with wa_message_id = NULL are perfectly fine
+    -- (all your outgoing AI messages will have NULL here).
+    wa_message_id       VARCHAR(500) UNIQUE,
+
+    media_url           VARCHAR(1000),
+
+    -- Tracks AI cost per message. Summing this column for a tenant
+    -- gives you their total token consumption — essential for billing.
+    tokens_used         INTEGER NOT NULL DEFAULT 0,
+
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Primary lookup: "give me all messages in this conversation, oldest first"
+-- This is what the dashboard chat view runs when a client opens a thread.
+CREATE INDEX IF NOT EXISTS idx_messages_conversation_id
+    ON messages (conversation_id, created_at ASC);
+
+-- Secondary lookup: find a message by its WhatsApp ID quickly.
+-- Used during deduplication checks and for marking messages as read.
+CREATE INDEX IF NOT EXISTS idx_messages_wa_message_id
+    ON messages (wa_message_id)
+    WHERE wa_message_id IS NOT NULL;  -- partial index: skips NULL rows entirely,
+                                      -- making the index smaller and faster
+
+-- ============================================================
+-- TRIGGER: Keep last_message_at current automatically
+-- When a new message is inserted, we want the parent conversation's
+-- last_message_at to update and message_count to increment.
+-- Doing this in a trigger means you can never forget to do it
+-- in your application code — the database handles it for you.
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION update_conversation_on_new_message()
+RETURNS TRIGGER AS $$
+BEGIN
+    UPDATE conversations
+    SET
+        -- Set last_message_at to exactly when this message was created
+        last_message_at = NEW.created_at,
+        -- Increment the cached count by 1
+        message_count   = message_count + 1
+    WHERE id = NEW.conversation_id;
+
+    -- RETURN NEW is required for AFTER INSERT triggers — it tells
+    -- PostgreSQL to proceed normally with the original INSERT.
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER messages_update_conversation
+    AFTER INSERT ON messages       -- fires AFTER the message row is committed
+    FOR EACH ROW                   -- fires once per inserted row, not once per statement
+    EXECUTE FUNCTION update_conversation_on_new_message();
+
+-- ============================================================
+-- ROW LEVEL SECURITY
+-- Supabase enables RLS by default. Your FastAPI backend connects
+-- using the service_role key which bypasses RLS, so the "full
+-- access" policies below are what matter for your use case.
+-- If you later build a client-facing dashboard using Supabase's
+-- JavaScript client library directly (without going through FastAPI),
+-- you would add more restrictive per-tenant policies here.
+-- ============================================================
+
+ALTER TABLE conversations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Service role full access to conversations"
+    ON conversations FOR ALL USING (true);
+
+CREATE POLICY "Service role full access to messages"
+    ON messages FOR ALL USING (true);
+
+
+-- ============================================================
+-- VERIFY EVERYTHING WORKS
+-- Run this after the above to confirm your setup is correct.
+-- It inserts a test conversation and two messages, then reads
+-- them back to make sure the trigger updated the count.
+-- ============================================================
+
+DO $$
+DECLARE
+    test_tenant_id   UUID;
+    test_conv_id     UUID;
+BEGIN
+    -- Get the test tenant we created earlier
+    SELECT id INTO test_tenant_id
+    FROM tenants
+    WHERE email = 'test@abcshoes.lk'
+    LIMIT 1;
+
+    -- Only run the test if the tenant exists
+    IF test_tenant_id IS NOT NULL THEN
+
+        -- Create a test conversation
+        INSERT INTO conversations (tenant_id, customer_phone, customer_name)
+        VALUES (test_tenant_id, '94750688759', 'Sahan Randika')
+        RETURNING id INTO test_conv_id;
+
+        -- Insert a customer message
+        INSERT INTO messages (conversation_id, role, content, wa_message_id)
+        VALUES (test_conv_id, 'user', 'Do you have size 42 in black?', 'wamid.test123');
+
+        -- Insert an AI reply
+        INSERT INTO messages (conversation_id, role, content)
+        VALUES (test_conv_id, 'assistant', 'Yes! We have Nike Air Max 270 in size 42 in Black. Price is LKR 12,500. Would you like to order?');
+
+        RAISE NOTICE 'Test data inserted successfully for conversation %', test_conv_id;
+    ELSE
+        RAISE NOTICE 'Skipping test — no test tenant found. Run the tenant seed script first.';
+    END IF;
+END $$;
+
+-- Now verify the trigger worked correctly.
+-- message_count should be 2, last_message_at should be recent.
+SELECT
+    c.customer_name,
+    c.customer_phone,
+    c.message_count,            -- should be 2 (trigger incremented it twice)
+    c.last_message_at,
+    c.is_human_takeover,
+    COUNT(m.id) AS actual_message_count  -- should also be 2
+FROM conversations c
+LEFT JOIN messages m ON m.conversation_id = c.id
+WHERE c.customer_phone = '94750688759'
+GROUP BY c.id, c.customer_name, c.customer_phone,
+         c.message_count, c.last_message_at, c.is_human_takeover;
+
+-- Add password column to tenants so clients can log in directly
+ALTER TABLE tenants
+    ADD COLUMN IF NOT EXISTS password_hash TEXT;
+
+-- Set a default password for your existing test tenant
+-- Generate the hash in Python first:
+--   from passlib.context import CryptContext
+--   print(CryptContext(schemes=["bcrypt"]).hash("yourpassword"))
+-- Then paste the result below:
+
+UPDATE tenants
+SET password_hash = '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4J/HS.iZTi'
+WHERE email = 'test@abcshoes.lk';

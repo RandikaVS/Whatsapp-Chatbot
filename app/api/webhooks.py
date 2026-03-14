@@ -3,13 +3,17 @@ from fastapi import APIRouter, Request, HTTPException, Query, BackgroundTasks, D
 import httpx
 import logging
 from ..config import settings
-from ..services.session import SessionService, update_customer_message_timestamp, is_within_24h_window
-from ..helpers.webhook import detect_event_type, generate_ai_reply
+from ..services.session import SessionService, update_customer_message_timestamp, is_within_24h_window, is_duplicate
+from ..helpers.webhook import detect_event_type, generate_ai_reply, handle_status_update,send_template_message,send_text_message,send_button_message,mark_as_read,extract_user_text
 from ..database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
+from ..services.conversation import is_human_takeover_active, set_human_takeover
+from ..services.message_store import save_message
+from app.database import AsyncSessionLocal
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
 
 
 @router.get("/webhook")
@@ -44,7 +48,7 @@ async def receive_message(request: Request, bg: BackgroundTasks, db: AsyncSessio
                     await _handle_incoming_message(value, bg)
 
                 elif msg_type == "status":
-                    _handle_status_update(value)
+                    await handle_status_update(value)
 
     except Exception as e:
         logger.exception("Webhook processing error: %s", e)
@@ -61,246 +65,115 @@ async def _handle_incoming_message(value: dict, bg: BackgroundTasks):
     msg_type  = msg.get("type", "text")             
     timestamp = int(msg.get("timestamp", 0))
 
+    if await is_duplicate(msg_id):
+        logger.warning("Duplicate message ignored: %s from %s", msg_id, phone)
+        return
+    
+    # ── Step 1: Extract the phone_number_id from metadata ──────────
+    # This is YOUR WhatsApp business number's ID (not the customer's).
+    # It tells you WHICH of your tenants received this message.
+    # In a single-tenant setup this is always the same value,
+    # but in multi-tenant you MUST look this up per message.
+    phone_number_id = value.get("metadata", {}).get("phone_number_id")
+    if not phone_number_id:
+        logger.error("No phone_number_id in webhook metadata — cannot route message")
+        return
+
+    # ── Step 2: Look up which tenant owns this WhatsApp number ─────
+    from app.services.tenant import get_tenant_by_phone_number_id
+    tenant = await get_tenant_by_phone_number_id(phone_number_id)
+
+    if not tenant:
+        # No tenant registered for this number — log and ignore.
+        # This is safe to ignore: it just means the number isn't
+        # connected to any client in your system yet.
+        logger.warning("Ignoring message — no tenant for phone_number_id=%s", phone_number_id)
+        return
+
+    # ── Step 3: Extract customer name if WhatsApp provided it ──────
+    contacts = value.get("contacts", [])
+    customer_name = None
+    if contacts:
+        customer_name = contacts[0].get("profile", {}).get("name")
+
     await update_customer_message_timestamp(phone)
 
-    # Extract text safely based on message type
-    if msg_type == "text":
-        user_text = msg["text"]["body"]
-    elif msg_type == "image":
-        user_text = msg.get("image", {}).get("caption", "[Image received]")
-    elif msg_type == "audio":
-        user_text = "[Voice message received]"
-    elif msg_type == "document":
-        user_text = "[Document received]"
-    elif msg_type == "interactive":
-        # Button reply or list reply
-        interactive = msg.get("interactive", {})
-        if interactive.get("type") == "button_reply":
-            user_text = interactive["button_reply"]["title"]
-        elif interactive.get("type") == "list_reply":
-            user_text = interactive["list_reply"]["title"]
-        else:
-            user_text = "[Interactive message]"
-    else:
-        user_text = f"[{msg_type} message]"
+    user_text, should_reply = extract_user_text(msg)
 
-    logger.info("Incoming | phone=%s | type=%s | text=%s", phone, msg_type, user_text)
 
-    # Mark as read immediately (shows blue ticks to user)
+    logger.info("Incoming | phone=%s | type=%s | text=%s | will_reply=%s",
+                phone, msg.get("type"), user_text, should_reply)
+
+    # Always mark as read regardless of message type
     bg.add_task(mark_as_read, msg_id)
 
-    # Send AI reply in background
-    bg.add_task(process_and_reply, phone, user_text)
+    # Only trigger AI if the message type warrants a response
+    if should_reply:
+        bg.add_task(process_and_reply, phone, user_text, str(tenant.id), msg_id,customer_name)
 
 
-def _handle_status_update(value: dict):
-    status = value["statuses"][0]
-    status_type  = status.get("status")        # sent | delivered | read | failed
-    recipient    = status.get("recipient_id")
-    message_id   = status.get("id")
+async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_message_id: str, customer_name: str = None):
+    """
+    The complete production-ready message processing pipeline.
+    
+    Order matters here:
+    1. Check for human takeover (fastest exit)
+    2. Save the incoming message to DB permanently
+    3. Check keyword triggers (skip AI if matched)
+    4. Generate AI reply
+    5. Save AI reply to DB
+    6. Send to WhatsApp (with 24h window awareness)
+    """
 
-    if status_type == "failed":
-        errors = status.get("errors", [])
-        for err in errors:
-            code    = err.get("code")
-            title   = err.get("title")
-            details = err.get("error_data", {}).get("details", "")
-
-            logger.error(
-                "Message FAILED | to=%s | msg_id=%s | code=%s | reason=%s | detail=%s",
-                recipient, message_id, code, title, details
-            )
-
-            # Handle specific error codes
-            if code == 131047:
-                logger.warning(
-                    "24-hour window expired for %s. "
-                    "Must use approved template for re-engagement.", recipient
-                )
-            elif code == 131026:
-                logger.warning("Recipient %s does not have WhatsApp.", recipient)
-            elif code == 130429:
-                logger.warning("Rate limit hit. Slow down sending.")
-
-    else:
-        pricing = status.get("pricing", {})
-        logger.info(
-            "Status: %s | to=%s | msg_id=%s | billable=%s | category=%s",
-            status_type, recipient, message_id,
-            pricing.get("billable"), pricing.get("category")
-        )
-
-
-async def process_and_reply(phone: str, user_text: str):
     try:
+        from app.services.keyword_triggers import check_keyword_triggers
+        from app.models.Tenant import Tenant
+        import uuid
+
+        # ── Load the tenant's full config ──────────────────────────
+        async with AsyncSessionLocal() as db:
+            tenant = await db.get(Tenant, tenant_id)
+
+        if not tenant:
+            logger.error("Tenant %s disappeared between message receipt and processing", tenant_id)
+            return
+        
+        # Step 1 — Bot is silent during human takeover
+        if await is_human_takeover_active(phone, tenant_id):
+            logger.info("Human takeover active for %s — bot silent", phone)
+            return
+
+        # Step 2 — Permanently save the customer's message
+        await save_message(phone, tenant_id, "user", user_text,
+                           wa_message_id=wa_message_id)
+
+        # Step 3 — Check keyword triggers before calling the AI
+        trigger_result = check_keyword_triggers(user_text)
+        if trigger_result:
+            trigger_reply, action = trigger_result
+            if action == "clear_history":
+                await SessionService.clear(phone)
+            elif action == "escalate":
+                await set_human_takeover(phone, tenant_id, active=True)
+            await save_message(phone, tenant_id, "assistant", trigger_reply)
+            await send_text_message(phone, trigger_reply)
+            return
+
+        # Step 4 — Generate AI reply
         reply_text = await generate_ai_reply(user_text, phone)
 
+        # Step 5 — Save AI reply to DB
+        await save_message(phone, tenant_id, "assistant", reply_text)
+
+        # Step 6 — Send with 24h window awareness
         within_window = await is_within_24h_window(phone)
-        
         if within_window:
-            # Free text — customer messaged within 24h
             success = await send_text_message(phone, reply_text)
             if not success:
-                # Text failed anyway, fall back to template
                 await send_template_message(phone)
         else:
-            # Outside window — only templates allowed
-            # Use hello_world (always approved) or your own approved template
             await send_template_message(phone)
 
     except Exception as e:
         logger.exception("process_and_reply error for %s: %s", phone, e)
 
-
-async def send_template_message(
-    phone: str,
-    template_name: str = "hello_world",   # hello_world has no params needed
-    language_code: str = "en_US",
-    body_params: dict = None,
-) -> bool:
-    
-    url = f"https://graph.facebook.com/v22.0/{settings.WHATSAPP_BUSINESS_ACCOUNT_ID}/messages"
-    headers = {
-        "Authorization": f"Bearer {settings.CHAT_USER_TOKEN}",
-        "Content-Type": "application/json",
-    }
-
-    parameters = []
-    if body_params:
-        for param_name, param_value in body_params.items():
-            parameters.append({
-                "type": "text",
-                "parameter_name": param_name,
-                "text": str(param_value),
-            })
-
-    payload = {
-        "messaging_product": "whatsapp",
-        "recipient_type": "individual",
-        "to": phone,
-        "type": "template",
-        "template": {
-            "name": template_name,
-            "language": {"code": language_code},
-            "components": [
-                {
-                    "type": "body",
-                    "parameters": parameters,
-                }
-            ] if parameters else [],
-        },
-    }
-
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.post(url, headers=headers, json=payload)
-        result = resp.json()
-
-    if resp.status_code == 200 and "messages" in result:
-        msg_id = result["messages"][0]["id"]
-        logger.info("Template sent | to=%s | template=%s | msg_id=%s",
-                    phone, template_name, msg_id)
-        return True
-
-    logger.error("Template send failed | to=%s | response=%s", phone, result)
-    return False
-
-
-async def send_text_message(phone: str, body: str) -> bool:
-    """
-    Returns True if sent successfully.
-    Returns False if failed (e.g. 131047 window expired).
-    """
-    print("==========Sending text message=========", phone)  
-    url = f"https://graph.facebook.com/v22.0/{settings.PHONE_NUMBER_ID}/messages"
-    headers = {
-        "Authorization": f"Bearer {settings.CHAT_USER_TOKEN}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "messaging_product": "whatsapp",
-        "recipient_type": "individual",
-        "to": phone,
-        "type": "text",
-        "text": {
-            "preview_url": False,
-            "body": body,
-        },
-    }
-
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.post(url, headers=headers, json=payload)
-        result = resp.json()
-
-    if resp.status_code == 200 and "messages" in result:
-        msg_id = result["messages"][0]["id"]
-        logger.info("Text sent | to=%s | msg_id=%s", phone, msg_id)
-        return True
-
-    # Check for 24h window error specifically
-    errors = result.get("error", {})
-    code = errors.get("code") or errors.get("error_subcode")
-    if code == 131047:
-        logger.warning("24h window expired for %s", phone)
-        return False
-
-    logger.error("Send text failed | to=%s | response=%s", phone, result)
-    return False
-
-
-async def send_button_message(phone: str, body_text: str, buttons: list[dict]) -> bool:
-    """
-    buttons = [
-        {"id": "btn_yes", "title": "Yes, confirm"},
-        {"id": "btn_no",  "title": "No, cancel"},
-    ]
-    Max 3 buttons. Only works within 24h window.
-    """
-    url = f"https://graph.facebook.com/v22.0/{settings.PHONE_NUMBER_ID}/messages"
-    headers = {
-        "Authorization": f"Bearer {settings.CHATBOT_ACCESS_TOKEN}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "messaging_product": "whatsapp",
-        "recipient_type": "individual",
-        "to": phone,
-        "type": "interactive",
-        "interactive": {
-            "type": "button",
-            "body": {"text": body_text},
-            "action": {
-                "buttons": [
-                    {"type": "reply", "reply": {"id": b["id"], "title": b["title"]}}
-                    for b in buttons[:3]
-                ]
-            },
-        },
-    }
-
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.post(url, headers=headers, json=payload)
-        result = resp.json()
-
-    if resp.status_code == 200:
-        logger.info("Buttons sent | to=%s", phone)
-        return True
-
-    logger.error("Button send failed | to=%s | %s", phone, result)
-    return False
-
-
-async def mark_as_read(message_id: str):
-    """Sends read receipt — shows blue double ticks to the user."""
-    url = f"https://graph.facebook.com/v22.0/{settings.PHONE_NUMBER_ID}/messages"
-    headers = {
-        "Authorization": f"Bearer {settings.CHATBOT_ACCESS_TOKEN}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "messaging_product": "whatsapp",
-        "status": "read",
-        "message_id": message_id,
-    }
-    async with httpx.AsyncClient(timeout=10) as client:
-        await client.post(url, headers=headers, json=payload)
-    logger.debug("Marked as read: %s", message_id)
