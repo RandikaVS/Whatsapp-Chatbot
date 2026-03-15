@@ -228,7 +228,7 @@ async def send_button_message(phone: str, body_text: str, buttons: list[dict]) -
     """
     url = f"https://graph.facebook.com/v22.0/{settings.PHONE_NUMBER_ID}/messages"
     headers = {
-        "Authorization": f"Bearer {settings.CHATBOT_ACCESS_TOKEN}",
+        "Authorization": f"Bearer {settings.CHAT_USER_TOKEN}",
         "Content-Type": "application/json",
     }
     payload = {
@@ -264,7 +264,7 @@ async def mark_as_read(message_id: str):
     """Sends read receipt — shows blue double ticks to the user."""
     url = f"https://graph.facebook.com/v22.0/{settings.PHONE_NUMBER_ID}/messages"
     headers = {
-        "Authorization": f"Bearer {settings.CHATBOT_ACCESS_TOKEN}",
+        "Authorization": f"Bearer {settings.CHAT_USER_TOKEN}",
         "Content-Type": "application/json",
     }
     payload = {

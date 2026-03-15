@@ -1,28 +1,50 @@
-# Dockerfile
+
 FROM python:3.11-slim
 
-# Set working directory
+ARG ARG_CHAT_USER_TOKEN
+ARG ARG_PHONE_NUMBER_ID
+ARG ARG_WHATSAPP_BUSINESS_ACCOUNT_ID
+ARG ARG_VERIFY_TOKEN
+ARG ARG_GEMINI_API_KEY
+ARG ARG_ENVIRONMENT
+
+ARG ARG_DATABASE_HOST
+ARG ARG_DATABASE_NAME
+ARG ARG_DATABASE_USER
+ARG ARG_DATABASE_PASSWORD
+ARG ARG_DATABASE_PORT
+
+ARG ARG_REDIS_URL
+ARG ARG_JWT_SECRET_KEY
+
+ENV CHAT_USER_TOKEN=${ARG_CHAT_USER_TOKEN}
+ENV PHONE_NUMBER_ID=${ARG_PHONE_NUMBER_ID}
+ENV WHATSAPP_BUSINESS_ACCOUNT_ID=${ARG_WHATSAPP_BUSINESS_ACCOUNT_ID}
+ENV VERIFY_TOKEN=${ARG_VERIFY_TOKEN}
+ENV GEMINI_API_KEY=${ARG_GEMINI_API_KEY}
+ENV ENVIRONMENT=${ARG_ENVIRONMENT}
+
+ENV DATABASE_HOST=${ARG_DATABASE_HOST}
+ENV DATABASE_NAME=${ARG_DATABASE_NAME}
+ENV DATABASE_USER=${ARG_DATABASE_USER}
+ENV DATABASE_PASSWORD=${ARG_DATABASE_PASSWORD}
+ENV ARG_DATABASE_PORT=${ARG_DATABASE_PORT}
+
+ENV REDIS_URL=${ARG_REDIS_URL}
+ENV JWT_SECRET_KEY=${ARG_JWT_SECRET_KEY}
+
 WORKDIR /app
 
-# Install system dependencies
-# libpq-dev is needed for asyncpg/psycopg2 PostgreSQL drivers
 RUN apt-get update && apt-get install -y \
     libpq-dev \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first (Docker layer caching)
-# This means if only your code changes, pip install is skipped
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY ./requirements.txt /code/requirements.txt
+RUN pip install --no-cache-dir --upgrade -r requirements.txt
 
-# Copy the rest of your application
-COPY . .
+COPY ./main.py /app/
 
-# Cloud Run injects PORT environment variable at runtime
-# FastAPI/Uvicorn must listen on this port — NOT hardcoded 8000
 ENV PORT=8080
 
-# Run the application
-# host 0.0.0.0 is required — localhost would reject Cloud Run's health checks
 CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT}

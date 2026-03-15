@@ -7,7 +7,6 @@ load_dotenv()
 
 class Settings(BaseSettings):
     
-    CHATBOT_ACCESS_TOKEN: str = os.getenv("CHATBOT_ACCESS_TOKEN")
     CHAT_USER_TOKEN: str = os.getenv("CHAT_USER_TOKEN")
     PHONE_NUMBER_ID: str = os.getenv("PHONE_NUMBER_ID")
     WHATSAPP_BUSINESS_ACCOUNT_ID: str = os.getenv("WHATSAPP_BUSINESS_ACCOUNT_ID")
