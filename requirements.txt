@@ -1,34 +1,26 @@
 # requirements.txt — clean production version
 
-# ── Web framework ─────────────────────────────────────────────
 fastapi[standard]
-uvicorn[standard]==0.30.0
-python-multipart==0.0.9
+uvicorn
+python-multipart
 
-# ── Database ──────────────────────────────────────────────────
-sqlalchemy==2.0.36
-asyncpg==0.30.0
-alembic==1.13.1
-greenlet==3.1.1
-
-# ── HTTP client (WhatsApp API calls) ──────────────────────────
-httpx==0.28.1
-
-# ── AI ────────────────────────────────────────────────────────
-google-genai==1.5.0
-
-# ── Auth ──────────────────────────────────────────────────────
-passlib[bcrypt]==1.7.4
-python-jose[cryptography]==3.3.0
-bcrypt==4.0.1
-
-# ── Config & validation ───────────────────────────────────────
-pydantic-settings==2.5.0
-pydantic[email]==2.9.0
-python-dotenv==1.0.1
-
-# ── Monitoring ────────────────────────────────────────────────
-sentry-sdk[fastapi]==2.16.0
-
-# ── Payments ──────────────────────────────────────────────────
-stripe==10.12.0
+sqlalchemy
+asyncpg
+alembic
+greenlet
+httpx
+google-genai
+passlib
+python-jose
+bcrypt
+pydantic-settings
+pydantic
+python-dotenv
+sentry-sdk
+logfire
+aiosqlite
+redis
+psycopg2
+werkzeug
+pyjwt
+pwdlib[argon2]

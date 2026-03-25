@@ -2,11 +2,11 @@ from typing import Union
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.webhooks import router as webhooks_router
-from app.api.auth.auth import router as auth_router
-from app.api.agent import router as agent_router
-from app.api.auth.tenant_auth import router as tenant_auth_router
-from app.api.products import router as product_router
+from src.api.webhooks import router as webhooks_router
+from src.api.auth.auth import router as auth_router
+from src.api.agent import router as agent_router
+from src.api.auth.tenant_auth import router as tenant_auth_router
+from src.api.products import router as product_router
 def create_app():
 
     app = FastAPI(title="Chatbot API", description="A simple chatbot API", version="1.0.0")
