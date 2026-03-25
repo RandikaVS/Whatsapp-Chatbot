@@ -3,6 +3,7 @@ from app.config import settings
 from app.services.session import SessionService
 import logging
 import httpx
+from app.database import AsyncSessionLocal
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +14,7 @@ def detect_event_type(value: dict) -> str:
     if "statuses" in value:
         return "status"
     return "unknown"
+
 
 
 async def generate_ai_reply(user_text: str, phone: str) -> str:
@@ -276,88 +278,191 @@ async def mark_as_read(message_id: str):
         await client.post(url, headers=headers, json=payload)
     logger.debug("Marked as read: %s", message_id)
 
-
-def extract_user_text(msg: dict) -> tuple[str, bool]:
-    """
-    Extracts a human-readable representation of any message type.
     
-    Returns a tuple of (text_to_send_to_ai, should_reply).
-    The second value is False for things like reactions — you want to
-    log them but not trigger an AI response, because sending a reply
-    to a reaction looks very strange to the user.
+async def send_list_message(phone: str, header: str, body: str, button_label: str, sections: list) -> bool:
     """
-    msg_type = msg.get("type", "text")
+    sections = [
+        {
+            "title": "Sneakers",
+            "rows": [
+                {"id": "prod_uuid_1", "title": "Nike Air Max", "description": "LKR 12,500 | Sizes: 40,42,44"},
+                {"id": "prod_uuid_2", "title": "Adidas Ultra", "description": "LKR 9,800 | Colors: Black,White"},
+            ]
+        }
+    ]
+    """
+    url = f"https://graph.facebook.com/v19.0/{settings.PHONE_NUMBER_ID}/messages"
+    headers = {
+        "Authorization": f"Bearer {settings.CHAT_USER_TOKEN}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": phone,
+        "type": "interactive",
+        "interactive": {
+            "type": "list",
+            "header": {"type": "text", "text": header},
+            "body": {"text": body},
+            "footer": {"text": "Reply with your selection"},
+            "action": {
+                "button": button_label,          # text on the list-open button (max 20 chars)
+                "sections": sections,
+            },
+        },
+    }
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(url, headers=headers, json=payload)
+        if resp.status_code != 200:
+            logger.error("send_list_message failed: %s", resp.text)
+            return False
+        return True
+    
+def extract_user_text(msg: dict) -> tuple[str, bool]:
+    msg_type = msg.get("type")
 
     if msg_type == "text":
         return msg["text"]["body"], True
 
-    elif msg_type == "image":
-        # Caption is optional — the user may just send a photo with no text
-        caption = msg.get("image", {}).get("caption", "")
-        text = f"[Customer sent an image{': ' + caption if caption else ''}]"
-        return text, True
-
-    elif msg_type == "audio":
-        # In future you can transcribe this with Whisper — for now acknowledge it
-        return "[Customer sent a voice message. Please reply as text.]", True
-
-    elif msg_type == "video":
-        caption = msg.get("video", {}).get("caption", "")
-        text = f"[Customer sent a video{': ' + caption if caption else ''}]"
-        return text, True
-
-    elif msg_type == "document":
-        filename = msg.get("document", {}).get("filename", "a file")
-        return f"[Customer sent a document: {filename}]", True
-
-    elif msg_type == "sticker":
-        # Stickers are usually a casual acknowledgement — a short friendly reply is fine
-        return "[Customer sent a sticker]", True
-
-    elif msg_type == "location":
-        # Very useful for businesses like delivery services or restaurants
-        loc = msg.get("location", {})
-        lat = loc.get("latitude")
-        lng = loc.get("longitude")
-        name = loc.get("name", "")
-        address = loc.get("address", "")
-        text = f"[Customer shared their location: {name} {address} (lat: {lat}, lng: {lng})]"
-        return text, True
-
-    elif msg_type == "contacts":
-        # Someone forwarded a contact card
-        contacts = msg.get("contacts", [])
-        names = [c.get("name", {}).get("formatted_name", "Unknown") for c in contacts]
-        return f"[Customer shared contact(s): {', '.join(names)}]", True
-
     elif msg_type == "interactive":
         interactive = msg.get("interactive", {})
-        if interactive.get("type") == "button_reply":
-            # Customer tapped one of your quick-reply buttons
+        
+        if interactive.get("type") == "list_reply":
+            # User selected a product from your list
+            selected = interactive["list_reply"]
+            product_id = selected["id"]       # the UUID you set as row id
+            product_name = selected["title"]
+            # Return a structured string your AI / handler can act on
+            return f"[PRODUCT_SELECTED:{product_id}:{product_name}]", True
+
+        elif interactive.get("type") == "button_reply":
             return interactive["button_reply"]["title"], True
-        elif interactive.get("type") == "list_reply":
-            # Customer selected from your list menu
-            return interactive["list_reply"]["title"], True
-        elif interactive.get("type") == "nfm_reply":
-            # Native flow message reply (WhatsApp Forms)
-            return "[Customer submitted a form response]", True
-        return "[Customer sent an interactive message]", True
 
-    elif msg_type == "order":
-        # Customer placed an order from your WhatsApp catalog
-        order = msg.get("order", {})
-        items = order.get("product_items", [])
-        item_list = ", ".join([f"{i.get('product_retailer_id')} x{i.get('quantity')}" for i in items])
-        return f"[Customer placed an order: {item_list}]", True
+    return "", False
 
-    elif msg_type == "reaction":
-        # Someone reacted with an emoji — DO NOT reply to this
-        # It would be very weird to get "Thanks for your message!" after sending a 👍
-        emoji = msg.get("reaction", {}).get("emoji", "")
-        return f"[Customer reacted with {emoji}]", False  # <-- should_reply = False
+def build_product_sections(products: list) -> list:
+    """Group products by category into WhatsApp list sections."""
+    from collections import defaultdict
+    grouped = defaultdict(list)
+    for p in products:
+        category = (p.category or "Other").title()
+        grouped[category].append(p)
 
-    elif msg_type == "unsupported":
-        return "[Customer sent a message type that is not supported yet]", True
+    sections = []
+    for category, items in grouped.items():
+        rows = []
+        for p in items[:10]:  # WhatsApp max 10 rows per section
+            price_str = f"LKR {p.price:,.0f}" if p.price else "Price on request"
+            description_parts = [price_str]
+            if p.sizes_available:
+                description_parts.append(f"Sizes: {p.sizes_available}")
+            if p.colors_available:
+                description_parts.append(f"Colors: {p.colors_available}")
 
-    else:
-        return f"[Customer sent a {msg_type} message]", True
+            rows.append({
+                "id": str(p.id),                          # you'll get this back when user selects
+                "title": p.name[:24],                     # WhatsApp max 24 chars
+                "description": " | ".join(description_parts)[:72],  # max 72 chars
+            })
+        sections.append({"title": category, "rows": rows})
+
+    return sections[:10]  # WhatsApp max 10 sections
+
+
+async def get_products_for_tenant(tenant_id: str) -> list:
+    from app.models.product import Product
+    from sqlalchemy import select
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(Product)
+            .where(
+                Product.tenant_id == tenant_id,
+                Product.is_available == True,
+                Product.stock_quantity > 0,
+            )
+            .order_by(Product.category, Product.name)
+        )
+        return result.scalars().all()
+    
+def _format_product_details(product) -> str:
+    price_str = f"{product.currency} {product.price:,.0f}" if product.price else "Price on request"
+    lines = [
+        f"👟 *{product.name}*",
+        f"",
+        f"💰 Price   : {price_str}",
+        f"📦 Stock   : {product.stock_quantity} units",
+    ]
+    if product.sizes_available:
+        lines.append(f"📐 Sizes   : {product.sizes_available}")
+    if product.colors_available:
+        lines.append(f"🎨 Colors  : {product.colors_available}")
+    if product.description:
+        lines.append(f"")
+        lines.append(product.description)
+    return "\n".join(lines)
+
+
+async def get_product_by_id(product_id: str):
+    from app.models.product import Product
+    async with AsyncSessionLocal() as db:
+        return await db.get(Product, product_id)
+
+
+async def _send_product_list(phone: str, tenant_id: str, customer_name: str = None):
+    products = await get_products_for_tenant(tenant_id)
+    if not products:
+        await send_text_message(phone, "Sorry, no products are available right now. Check back soon!")
+        return
+    sections = build_product_sections(products)
+    greeting = f"Hi {customer_name}! Here's " if customer_name else "Here's "
+    await send_list_message(
+        phone=phone,
+        header="Our Products",
+        body=f"{greeting}what we have in stock. Tap to browse and select:",
+        button_label="View Products",
+        sections=sections,
+    )
+
+
+async def create_order(phone: str, tenant_id: str, flow: dict) -> str:
+    """Persist the order and return an order ID."""
+
+    order = {
+            "id":str("jhbbnmn"),
+            "tenant_id":tenant_id,
+            "customer_phone":phone,
+            "product_id":"product_id",
+            "product_name":flow["product_name"],
+            "quantity":"1",
+            "size":"size",
+            "address":"address",
+            "total_price":"100",
+            "currency":"LKR",
+            "status":"pending",
+            "order_ref":1
+    }
+
+    return 100
+
+    # from app.models.order import Order   # create this model
+    # import uuid, datetime
+    # order_id = f"ORD-{datetime.date.today().strftime('%Y%m%d')}-{str(uuid.uuid4())[:6].upper()}"
+    # async with AsyncSessionLocal() as db:
+    #     order = Order(
+    #         id=str(uuid.uuid4()),
+    #         tenant_id=tenant_id,
+    #         customer_phone=phone,
+    #         product_id=flow["product_id"],
+    #         product_name=flow["product_name"],
+    #         quantity=flow.get("quantity", 1),
+    #         size=flow.get("size"),
+    #         address=flow.get("address"),
+    #         total_price=flow.get("price", 0) * flow.get("quantity", 1),
+    #         currency=flow.get("currency", "LKR"),
+    #         status="pending",
+    #         order_ref=order_id,
+    #     )
+    #     db.add(order)
+    #     await db.commit()
+    # return order_id

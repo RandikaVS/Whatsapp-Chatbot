@@ -58,3 +58,4 @@ class Tenant(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     # Relationships — these let you write tenant.products or tenant.conversations
+    # app/models/Tenant.py
