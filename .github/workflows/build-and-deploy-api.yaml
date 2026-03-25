@@ -54,70 +54,39 @@ jobs:
         run: |
           echo "DOCKER_IMAGE=us-west2-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/bizassist-api-repo/bizassist-api:${{ env.IMAGE_TAG }}" >> $GITHUB_ENV
 
-      
-      - name: Build and push Docker image
+      - name: Build & Push Docker image
+        env:
+          DOCKER_IMAGE: ${{ env.DOCKER_IMAGE }}
         run: |
           gcloud auth configure-docker us-west2-docker.pkg.dev
-          docker build -t ${{ env.DOCKER_IMAGE }} .
-          docker push ${{ env.DOCKER_IMAGE }}
+          docker build \
+            --build-arg ARG_CHAT_USER_TOKEN=$CHAT_USER_TOKEN \
+            --build-arg ARG_PHONE_NUMBER_ID=$PHONE_NUMBER_ID \
+            --build-arg ARG_WHATSAPP_BUSINESS_ACCOUNT_ID=$WHATSAPP_BUSINESS_ACCOUNT_ID \
+            --build-arg ARG_VERIFY_TOKEN=$VERIFY_TOKEN \
+            --build-arg ARG_GEMINI_API_KEY=$GEMINI_API_KEY \
+            --build-arg ARG_ENVIRONMENT=$ENVIRONMENT \
+            --build-arg ARG_DATABASE_HOST=$DATABASE_HOST \
+            --build-arg ARG_DATABASE_NAME=$DATABASE_NAME \
+            --build-arg ARG_DATABASE_NAME=$DATABASE_NAME \
+            --build-arg ARG_DATABASE_USER=$DATABASE_USER \
+            --build-arg ARG_DATABASE_PASSWORD=$DATABASE_PASSWORD \
+            --build-arg ARG_DATABASE_PORT=$DATABASE_PORT \
+            --build-arg ARG_REDIS_URL=$REDIS_URL \
+            --build-arg ARG_JWT_SECRET_KEY=$JWT_SECRET_KEY \
+            -t ${DOCKER_IMAGE} .
+
+          docker push ${DOCKER_IMAGE}
 
       - name: Deploy to Cloud Run
+        env:
+          SERVICE_NAME: ${{ env.SERVICE_NAME }}
+          DOCKER_IMAGE: ${{ env.DOCKER_IMAGE }}
+          REGION: ${{ env.REGION }}
         run: |
-          gcloud run deploy biz-assist-service-account \
-            --image=${{ env.DOCKER_IMAGE }} \
-            --region=us-west2 \
+          gcloud run deploy ${SERVICE_NAME} \
+            --image=${DOCKER_IMAGE} \
+            --region=$REGION \
             --platform=managed \
             --allow-unauthenticated \
-            --port=8080 \
-            --memory=512Mi \
-            --timeout=60 \
-            --set-env-vars="\
-              ENVIRONMENT=production,\
-              PHONE_NUMBER_ID=${{ secrets.PHONE_NUMBER_ID }},\
-              VERIFY_TOKEN=${{ secrets.VERIFY_TOKEN }},\
-              CHAT_USER_TOKEN=${{ secrets.CHAT_USER_TOKEN }},\
-              GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }},\
-              DATABASE_HOST=${{ secrets.DATABASE_HOST }},\
-              DATABASE_NAME=${{ secrets.DATABASE_NAME }},\
-              DATABASE_USER=${{ secrets.DATABASE_USER }},\
-              DATABASE_PASSWORD=${{ secrets.DATABASE_PASSWORD }},\
-              DATABASE_PORT=${{ secrets.DATABASE_PORT }},\
-              SECRET_KEY=${{ secrets.JWT_SECRET_KEY }},\
-              WHATSAPP_BUSINESS_ACCOUNT_ID=${{ secrets.WHATSAPP_BUSINESS_ACCOUNT_ID }}"
-
-      # - name: Build & Push Docker image
-      #   env:
-      #     DOCKER_IMAGE: ${{ env.DOCKER_IMAGE }}
-      #   run: |
-      #     gcloud auth configure-docker us-west2-docker.pkg.dev
-      #     docker build \
-      #       --build-arg ARG_CHAT_USER_TOKEN=$CHAT_USER_TOKEN \
-      #       --build-arg ARG_PHONE_NUMBER_ID=$PHONE_NUMBER_ID \
-      #       --build-arg ARG_WHATSAPP_BUSINESS_ACCOUNT_ID=$WHATSAPP_BUSINESS_ACCOUNT_ID \
-      #       --build-arg ARG_VERIFY_TOKEN=$VERIFY_TOKEN \
-      #       --build-arg ARG_GEMINI_API_KEY=$GEMINI_API_KEY \
-      #       --build-arg ARG_ENVIRONMENT=$ENVIRONMENT \
-      #       --build-arg ARG_DATABASE_HOST=$DATABASE_HOST \
-      #       --build-arg ARG_DATABASE_NAME=$DATABASE_NAME \
-      #       --build-arg ARG_DATABASE_NAME=$DATABASE_NAME \
-      #       --build-arg ARG_DATABASE_USER=$DATABASE_USER \
-      #       --build-arg ARG_DATABASE_PASSWORD=$DATABASE_PASSWORD \
-      #       --build-arg ARG_DATABASE_PORT=$DATABASE_PORT \
-      #       --build-arg ARG_REDIS_URL=$REDIS_URL \
-      #       --build-arg ARG_JWT_SECRET_KEY=$JWT_SECRET_KEY \
-      #       -t ${DOCKER_IMAGE} .
-
-      #     docker push ${DOCKER_IMAGE}
-
-      # - name: Deploy to Cloud Run
-      #   env:
-      #     SERVICE_NAME: ${{ env.SERVICE_NAME }}
-      #     DOCKER_IMAGE: ${{ env.DOCKER_IMAGE }}
-      #     REGION: ${{ env.REGION }}
-      #   run: |
-      #     gcloud run deploy ${SERVICE_NAME} \
-      #       --image=${DOCKER_IMAGE} \
-      #       --region=$REGION \
-      #       --platform=managed \
-      #       --allow-unauthenticated \
-      #       --port=8080
+            --port=8080

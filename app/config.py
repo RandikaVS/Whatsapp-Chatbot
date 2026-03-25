@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     SENTRY_DSN: str = os.getenv("SENTRY_DSN", "")
     WHATSAPP_PHONE_NUMBER_ID: str = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
+    
 
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "b6c48e51ecc74f5a574be24407cd3822ef1138dcdcfd979a6d73bc7c20faded8f524914d0a0c042d664d54a12292d31edaa5721d8e83ef16730027e6cea70e20")                
     JWT_ALGORITHM: str = "HS256"
