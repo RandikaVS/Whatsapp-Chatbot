@@ -1,11 +1,10 @@
-import redis.asyncio as redis
+import redis
 import json
 from src.config import settings
 import time
 
 
-redis_client = redis.from_url(settings.REDIS_URL)
-
+redis_client = redis.Redis.from_url(settings.REDIS_URL)
 
 class SessionService:
 
