@@ -1,7 +1,7 @@
 # requirements.txt — clean production version
 
 # ── Web framework ─────────────────────────────────────────────
-fastapi==0.115.0
+fastapi[standard]
 uvicorn[standard]==0.30.0
 python-multipart==0.0.9
 
