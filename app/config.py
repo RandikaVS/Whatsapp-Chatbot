@@ -30,6 +30,14 @@ class Settings(BaseSettings):
                             + os.environ.get('DATABASE_PORT') + '/' \
                             + os.environ.get('DATABASE_NAME')
     
+    @property
+    def DATABASE_URL(self) -> str:
+        return (
+            f"postgresql+asyncpg://{self.DATABASE_USER}:{self.DATABASE_PASSWORD}"
+            f"@{self.DATABASE_HOST}:{self.DATABASE_PORT}/{self.DATABASE_NAME}"
+            f"?ssl=require"
+        )
+    
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     SENTRY_DSN: str = os.getenv("SENTRY_DSN", "")
     WHATSAPP_PHONE_NUMBER_ID: str = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
