@@ -11,9 +11,6 @@ asyncpg==0.30.0
 alembic==1.13.1
 greenlet==3.1.1
 
-# ── Redis ─────────────────────────────────────────────────────
-redis[asyncio]==5.1.0
-
 # ── HTTP client (WhatsApp API calls) ──────────────────────────
 httpx==0.28.1
 
@@ -23,14 +20,12 @@ google-genai==1.5.0
 # ── Auth ──────────────────────────────────────────────────────
 passlib[bcrypt]==1.7.4
 python-jose[cryptography]==3.3.0
+bcrypt==4.0.1
 
 # ── Config & validation ───────────────────────────────────────
 pydantic-settings==2.5.0
 pydantic[email]==2.9.0
 python-dotenv==1.0.1
-
-# ── Background tasks ──────────────────────────────────────────
-celery==5.4.0
 
 # ── Monitoring ────────────────────────────────────────────────
 sentry-sdk[fastapi]==2.16.0
