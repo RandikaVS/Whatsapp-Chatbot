@@ -34,7 +34,7 @@ jobs:
         run: |
           echo "IMAGE_TAG=$(date +'%Y%m%d%H%M%S')" >> $GITHUB_ENV
           echo "REGION=us-west2" >> $GITHUB_ENV
-          echo "SERVICE_NAME=dees-international" >> $GITHUB_ENV
+          echo "SERVICE_NAME=bizassist-meta-service" >> $GITHUB_ENV
 
           echo "CHAT_USER_TOKEN"=${{ secrets.CHAT_USER_TOKEN }} >> $GITHUB_ENV
           echo "PHONE_NUMBER_ID"=${{ secrets.PHONE_NUMBER_ID }} >> $GITHUB_ENV
