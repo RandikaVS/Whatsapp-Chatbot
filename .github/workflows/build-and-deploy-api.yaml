@@ -50,6 +50,9 @@ jobs:
           echo "DATABASE_USER"=${{ secrets.DATABASE_USER }} >> $GITHUB_ENV
           echo "DATABASE_PASSWORD"=${{ secrets.DATABASE_PASSWORD }} >> $GITHUB_ENV
 
+          echo "JWT_SECRET_KEY"=${{ secrets.JWT_SECRET_KEY }} >> $GITHUB_ENV
+          echo "REDIS_URL"=${{ secrets.REDIS_URL }} >> $GITHUB_ENV
+
       - name: Set Docker image
         run: |
           echo "DOCKER_IMAGE=us-west2-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/bizassist-api-repo/bizassist-api:${{ env.IMAGE_TAG }}" >> $GITHUB_ENV
