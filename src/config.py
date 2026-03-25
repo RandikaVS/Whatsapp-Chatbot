@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 import os
 import psycopg2
 from typing import ClassVar, Dict
+from typing import ClassVar, Dict, List, Any
 
 load_dotenv()
 
@@ -61,7 +62,7 @@ class Settings(BaseSettings):
         8: "support",
     }
 
-    DEFAULT_STEPS = [
+    DEFAULT_STEPS: ClassVar[List[Dict[str, Any]]] = [
         {
             "step_index": 0, "step_key": "idle", "display_name": "Idle / Entry",
             "is_enabled": True,
