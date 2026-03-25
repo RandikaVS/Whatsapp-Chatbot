@@ -4,7 +4,7 @@ from src.config import settings
 import time
 
 
-redis_client = redis.from_url(settings.REDIS_URL,encoding="utf-8",decode_responses=True)
+redis_client = redis.from_url(settings.REDIS_URL)
 
 
 class SessionService:

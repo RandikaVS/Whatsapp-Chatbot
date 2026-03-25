@@ -48,5 +48,18 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30   # access token lives 30 minutes
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7      # refresh token lives 7 days
 
+
+    FLOW_STEPS_DICT = dict(
+            "idle",
+            "main_menu",
+            "browsing",
+            "product_detail",
+            "collect_quantity",
+            "collect_size",
+            "collect_address",
+            "confirm_order",
+            "support",
+    )
+
         
 settings = Settings()
