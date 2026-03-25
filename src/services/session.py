@@ -1,10 +1,20 @@
-import redis
+import redis.asyncio as redis
 import json
 from src.config import settings
 import time
+import os
 
 
-redis_client = redis.Redis.from_url(settings.REDIS_URL)
+# redis_client = redis.Redis.from_url(settings.REDIS_URL)
+
+
+def get_redis():
+
+    return redis.from_url(
+         settings.REDIS_URL,
+        encoding="utf-8",
+        decode_responses=True
+    )
 
 class SessionService:
 
@@ -40,20 +50,28 @@ async def is_within_24h_window(phone: str) -> bool:
 
 
 
-async def is_duplicate(msg_id: str) -> bool:
-    """
-    Returns True if we've already processed this message.
+# async def is_duplicate(msg_id: str, redis_client: redis) -> bool:
+
+#     TTL = 60 * 60 * 24 
+
+#     key = f"processed_msg:{msg_id}"
     
-    We store msg_id in Redis with a 24-hour TTL. WhatsApp message IDs
-    are unique globally — they will never repeat — so if we've seen it,
-    it's a duplicate delivery from Meta's infrastructure.
-    """
-    key = f"processed_msg:{msg_id}"
+#     # SET key value NX = only set if not exists, returns True if newly set
+#     # This is an atomic operation — no race condition even under high load
+#     was_set = await redis_client.setex(key, TTL, nx=True)  # 24h TTL
     
-    # SET key value NX = only set if not exists, returns True if newly set
-    # This is an atomic operation — no race condition even under high load
-    was_set = await redis_client.set(key, "1", nx=True, ex=86400)  # 24h TTL
-    
-    # was_set is True if we just set it (first time seen = not duplicate)
-    # was_set is None if key already existed (duplicate!)
-    return was_set is None
+#     # was_set is True if we just set it (first time seen = not duplicate)
+#     # was_set is None if key already existed (duplicate!)
+#     return was_set is None
+
+
+async def is_duplicate(msg_id: str, redis_client: redis.Redis):
+
+    key = f"msg:{msg_id}"
+
+    if await redis_client.get(key):
+        return True
+
+    await redis_client.setex(key, 60 * 60, "1")
+
+    return False

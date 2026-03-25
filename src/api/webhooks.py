@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Request, HTTPException, Query, BackgroundTasks, Depends
 import httpx
 import logging
+import redis.asyncio as redis
 from ..config import settings
 from ..services.session import SessionService, is_within_24h_window, is_duplicate
 from ..helpers.webhook import detect_event_type, generate_ai_reply, handle_status_update,send_template_message,send_text_message,send_button_message,mark_as_read,extract_user_text,send_list_message,build_product_sections,get_products_for_tenant,create_order,_send_product_list,get_product_by_id,_format_product_details
@@ -10,11 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..services.conversation import is_human_takeover_active, set_human_takeover
 from ..services.message_store import save_message
 from src.database import AsyncSessionLocal
+from src.services.session import get_redis
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-
+redis_client = get_redis()
 
 @router.get("/webhook")
 async def verify_webhook(
@@ -29,7 +31,7 @@ async def verify_webhook(
 
 
 @router.post("/webhook")
-async def receive_message(request: Request, bg: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+async def receive_message(request: Request, bg: BackgroundTasks, db: AsyncSession = Depends(get_db),redis_client: redis.Redis = Depends(get_redis)):
     try:
 
         data = await request.json()
@@ -45,7 +47,7 @@ async def receive_message(request: Request, bg: BackgroundTasks, db: AsyncSessio
                 print("Detected event type:", msg_type) 
 
                 if msg_type == "message":
-                    await _handle_incoming_message(value, bg)
+                    await _handle_incoming_message(value, bg, redis_client)
 
                 elif msg_type == "status":
                     await handle_status_update(value)
@@ -56,15 +58,15 @@ async def receive_message(request: Request, bg: BackgroundTasks, db: AsyncSessio
     return {"status": "ok"}
 
 
-async def _handle_incoming_message(value: dict, bg: BackgroundTasks):
-    print("Handling incoming message...")  
+async def _handle_incoming_message(value: dict, bg: BackgroundTasks, redis_client: redis.Redis):
+    print("Handling incoming message...", value)  
     msg = value["messages"][0]
     phone     = msg["from"]                          
     msg_id    = msg["id"]                          
     msg_type  = msg.get("type", "text")             
     timestamp = int(msg.get("timestamp", 0))
 
-    if await is_duplicate(msg_id):
+    if await is_duplicate(msg_id,redis_client):
         logger.warning("Duplicate message ignored: %s from %s", msg_id, phone)
         return
     
@@ -95,10 +97,10 @@ async def _handle_incoming_message(value: dict, bg: BackgroundTasks):
     bg.add_task(mark_as_read, msg_id)
 
     if should_reply:
-        bg.add_task(process_and_reply, phone, user_text, str(tenant.id), msg_id,customer_name)
+        bg.add_task(process_and_reply, phone, user_text, str(tenant.id), msg_id,customer_name, redis_client)
 
 
-async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_message_id: str, customer_name: str = None):
+async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_message_id: str, customer_name: str = None, redis_client: redis.Redis = None):
     try:
         from src.services.flow import get_flow_state, set_flow_state, clear_flow_state
         from src.models.tenant import Tenant
@@ -111,11 +113,11 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
 
         await save_message(phone, tenant_id, "user", user_text, wa_message_id=wa_message_id)
 
-        flow = await get_flow_state(phone)
+        flow = await get_flow_state(phone,redis_client)
         step = flow.get("step", "idle")
 
         if user_text.strip().lower() in ["hi", "hello", "hey", "start", "menu", "help"]:
-            await clear_flow_state(phone)
+            await clear_flow_state(phone,redis_client)
             step = settings.FLOW_STEPS_DICT[0]
 
         # Getting Main Menu Input
@@ -134,7 +136,7 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
                     {"id": "flow_support",  "title": "💬 Support"},
                 ],
             )
-            await set_flow_state(phone, {"step": "main_menu"})
+            await set_flow_state(phone, {"step": "main_menu"}, redis_client)
             await save_message(phone, tenant_id, "assistant", "[Sent main menu]")
             return
 
@@ -143,7 +145,7 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
 
             if user_text == "flow_browse" or "browse" in user_text.lower() or "product" in user_text.lower():
                 await _send_product_list(phone, tenant_id, customer_name)
-                await set_flow_state(phone, {"step": "browsing"})
+                await set_flow_state(phone, {"step": "browsing"},redis_client)
                 return
 
             elif user_text == "flow_order" or "order" in user_text.lower():
@@ -153,7 +155,7 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
                     "_(e.g. ORD-20240312-001)_"
                 )
                 await send_text_message(phone, reply)
-                await set_flow_state(phone, {"step": "order_lookup"})
+                await set_flow_state(phone, {"step": "order_lookup"},redis_client)
                 await save_message(phone, tenant_id, "assistant", reply)
                 return
 
@@ -164,13 +166,13 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
                     "or I can connect you with our team."
                 )
                 await send_text_message(phone, reply)
-                await set_flow_state(phone, {"step": "support"})
+                await set_flow_state(phone, {"step": "support"},redis_client)
                 await save_message(phone, tenant_id, "assistant", reply)
                 return
 
             else:
                 
-                await clear_flow_state(phone)
+                await clear_flow_state(phone,redis_client)
                 await process_and_reply(phone, "hi", tenant_id, wa_message_id, customer_name)
                 return
 
@@ -186,7 +188,7 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
 
                 if not product:
                     await send_text_message(phone, "Sorry, that product is no longer available.")
-                    await clear_flow_state(phone)
+                    await clear_flow_state(phone,redis_client)
                     return
 
                 details = _format_product_details(product)
@@ -203,7 +205,7 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
                     "step": "product_detail",
                     "product_id": product_id,
                     "product_name": product_name,
-                })
+                },redis_client)
                 await save_message(phone, tenant_id, "assistant", f"[Showed product detail: {product_name}]")
                 return
             else:
@@ -218,11 +220,11 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
 
             if user_text in ("flow_back", "◀️ Back to List"):
                 await _send_product_list(phone, tenant_id, customer_name)
-                await set_flow_state(phone, {"step": "browsing"})
+                await set_flow_state(phone, {"step": "browsing"},redis_client)
                 return
 
             elif user_text in ("flow_main_menu", "🏠 Main Menu"):
-                await clear_flow_state(phone)
+                await clear_flow_state(phone,redis_client)
                 await process_and_reply(phone, "hi", tenant_id, wa_message_id, customer_name)
                 return
 
@@ -239,7 +241,7 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
                     "product_name": product_name,
                     "price": product.price,
                     "currency": product.currency,
-                })
+                },redis_client)
                 await save_message(phone, tenant_id, "assistant", reply)
                 return
 
@@ -250,7 +252,7 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
                 return
 
             qty = int(user_text.strip())
-            await set_flow_state(phone, {**flow, "step": "collect_size", "quantity": qty})
+            await set_flow_state(phone, {**flow, "step": "collect_size", "quantity": qty},redis_client)
             reply = "What *size* do you need? (e.g. 40, 42, 44)"
             await send_text_message(phone, reply)
             await save_message(phone, tenant_id, "assistant", reply)
@@ -259,7 +261,7 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
         # Getting Address
         if step == settings.FLOW_STEPS_DICT[5]:
             size = user_text.strip()
-            await set_flow_state(phone, {**flow, "step": "collect_address", "size": size})
+            await set_flow_state(phone, {**flow, "step": "collect_address", "size": size},redis_client)
             reply = "📍 What is your *delivery address*?"
             await send_text_message(phone, reply)
             await save_message(phone, tenant_id, "assistant", reply)
@@ -268,7 +270,7 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
         # Getting Order Confirmation
         if step == settings.FLOW_STEPS_DICT[6]:
             address = user_text.strip()
-            await set_flow_state(phone, {**flow, "step": "confirm_order", "address": address})
+            await set_flow_state(phone, {**flow, "step": "confirm_order", "address": address},redis_client)
 
             # Show order summary for confirmation
             total = flow.get("price", 0) * flow.get("quantity", 1)
@@ -306,7 +308,7 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
                 )
                 await send_text_message(phone, reply)
                 await save_message(phone, tenant_id, "assistant", reply)
-                await clear_flow_state(phone)
+                await clear_flow_state(phone,redis_client)
                 return
 
             elif user_text in ("flow_cancel", "❌ Cancel"):
@@ -314,7 +316,7 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
                 reply = "Order cancelled. No problem! Type *hi* to start again. 😊"
                 await send_text_message(phone, reply)
                 await save_message(phone, tenant_id, "assistant", reply)
-                await clear_flow_state(phone)
+                await clear_flow_state(phone,redis_client)
                 return
 
         # Selecting Support 
@@ -332,7 +334,7 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
             return
 
 
-        await clear_flow_state(phone)
+        await clear_flow_state(phone,redis_client)
         await process_and_reply(phone, "hi", tenant_id, wa_message_id, customer_name)
 
     except Exception as e:
