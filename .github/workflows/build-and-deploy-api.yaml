@@ -51,7 +51,6 @@ jobs:
           echo "DATABASE_PASSWORD"=${{ secrets.DATABASE_PASSWORD }} >> $GITHUB_ENV
 
           echo "JWT_SECRET_KEY"=${{ secrets.JWT_SECRET_KEY }} >> $GITHUB_ENV
-          echo "REDIS_URL"=${{ secrets.REDIS_URL }} >> $GITHUB_ENV
 
       - name: Set Docker image
         run: |
@@ -75,7 +74,6 @@ jobs:
             --build-arg ARG_DATABASE_USER=$DATABASE_USER \
             --build-arg ARG_DATABASE_PASSWORD=$DATABASE_PASSWORD \
             --build-arg ARG_DATABASE_PORT=$DATABASE_PORT \
-            --build-arg ARG_REDIS_URL=$REDIS_URL \
             --build-arg ARG_JWT_SECRET_KEY=$JWT_SECRET_KEY \
             -t ${DOCKER_IMAGE} .
 
