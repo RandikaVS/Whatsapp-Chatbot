@@ -1,3 +1,41 @@
+# FROM python:3.11
+
+# ARG ARG_CHAT_USER_TOKEN
+# ARG ARG_PHONE_NUMBER_ID
+# ARG ARG_WHATSAPP_BUSINESS_ACCOUNT_ID
+# ARG ARG_VERIFY_TOKEN
+# ARG ARG_GEMINI_API_KEY
+# ARG ARG_ENVIRONMENT
+# ARG ARG_DATABASE_HOST
+# ARG ARG_DATABASE_NAME
+# ARG ARG_DATABASE_USER
+# ARG ARG_DATABASE_PASSWORD
+# ARG ARG_DATABASE_PORT
+# ARG ARG_JWT_SECRET_KEY
+
+# ENV CHAT_USER_TOKEN=${ARG_CHAT_USER_TOKEN}
+# ENV PHONE_NUMBER_ID=${ARG_PHONE_NUMBER_ID}
+# ENV WHATSAPP_BUSINESS_ACCOUNT_ID=${ARG_WHATSAPP_BUSINESS_ACCOUNT_ID}
+# ENV VERIFY_TOKEN=${ARG_VERIFY_TOKEN}
+# ENV GEMINI_API_KEY=${ARG_GEMINI_API_KEY}
+# ENV ENVIRONMENT=${ARG_ENVIRONMENT}
+# ENV DATABASE_HOST=${ARG_DATABASE_HOST}
+# ENV DATABASE_NAME=${ARG_DATABASE_NAME}
+# ENV DATABASE_USER=${ARG_DATABASE_USER}
+# ENV DATABASE_PASSWORD=${ARG_DATABASE_PASSWORD}
+# ENV DATABASE_PORT=${ARG_DATABASE_PORT} 
+# ENV JWT_SECRET_KEY=${ARG_JWT_SECRET_KEY}
+
+# WORKDIR /code
+
+# COPY ./requirements.txt /code/requirements.txt
+# RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
+# COPY ./main.py /code/
+# CMD ["fastapi", "run", "main.py", "--port", "8080"]
+
+
+
+
 FROM python:3.11
 
 ARG ARG_CHAT_USER_TOKEN
@@ -26,9 +64,14 @@ ENV DATABASE_PASSWORD=${ARG_DATABASE_PASSWORD}
 ENV DATABASE_PORT=${ARG_DATABASE_PORT} 
 ENV JWT_SECRET_KEY=${ARG_JWT_SECRET_KEY}
 
-WORKDIR /code
+WORKDIR /app
 
-COPY ./requirements.txt /code/requirements.txt
-RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
-COPY ./main.py /code/
-CMD ["fastapi", "run", "main.py", "--port", "8080"]
+RUN apt-get update && apt-get install -y \
+    libpq-dev \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade -r requirements.txt
+COPY ./main.py ./app
+# CMD ["fastapi", "run", "main.py", "--port", "8080"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
