@@ -8,19 +8,13 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
 
-    permissions:
-      contents: read
-      id-token: write
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
       - name: Authenticate GCP
-        env:
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
         run: |
-          echo "$GOOGLE_APPLICATION_CREDENTIALS" > $HOME/gcloud.json
+          echo "${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}" > $HOME/gcloud.json
           gcloud auth activate-service-account --key-file=$HOME/gcloud.json
 
       - name: Setup gcloud
@@ -28,63 +22,134 @@ jobs:
         with:
           project_id: ${{ secrets.GOOGLE_PROJECT }}
 
-      - name: Set env vars
+      - name: Set image tag
         run: |
           echo "IMAGE_TAG=$(date +'%Y%m%d%H%M%S')" >> $GITHUB_ENV
-          echo "REGION=us-west2" >> $GITHUB_ENV
-          echo "SERVICE_NAME=biz-assist-service-account" >> $GITHUB_ENV
+          echo "DOCKER_IMAGE=us-west2-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/bizassist-api-repo/bizassist-api:$(date +'%Y%m%d%H%M%S')" >> $GITHUB_ENV
 
-          echo "CHAT_USER_TOKEN"=${{ secrets.CHAT_USER_TOKEN }} >> $GITHUB_ENV
-          echo "PHONE_NUMBER_ID"=${{ secrets.PHONE_NUMBER_ID }} >> $GITHUB_ENV
-          echo "WHATSAPP_BUSINESS_ACCOUNT_ID"=${{ secrets.WHATSAPP_BUSINESS_ACCOUNT_ID }} >> $GITHUB_ENV
-
-          echo "VERIFY_TOKEN"=${{ secrets.VERIFY_TOKEN }} >> $GITHUB_ENV
-          echo "GEMINI_API_KEY"=${{ secrets.GEMINI_API_KEY }} >> $GITHUB_ENV
-          echo "ENVIRONMENT"=${{ secrets.ENVIRONMENT }} >> $GITHUB_ENV
-
-          echo "DATABASE_HOST"=${{ secrets.DATABASE_HOST }} >> $GITHUB_ENV
-          echo "DATABASE_NAME"=${{ secrets.DATABASE_NAME }} >> $GITHUB_ENV
-          echo "DATABASE_PORT"=${{ secrets.DATABASE_PORT }} >> $GITHUB_ENV
-          echo "DATABASE_USER"=${{ secrets.DATABASE_USER }} >> $GITHUB_ENV
-          echo "DATABASE_PASSWORD"=${{ secrets.DATABASE_PASSWORD }} >> $GITHUB_ENV
-
-      - name: Set Docker image
-        run: |
-          echo "DOCKER_IMAGE=us-west2-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/bizassist-api-repo/bizassist-api:${{ env.IMAGE_TAG }}" >> $GITHUB_ENV
-
-      - name: Build & Push Docker image
-        env:
-          DOCKER_IMAGE: ${{ env.DOCKER_IMAGE }}
+      - name: Build and push Docker image
         run: |
           gcloud auth configure-docker us-west2-docker.pkg.dev
-          docker build \
-            --build-arg ARG_CHAT_USER_TOKEN=$CHAT_USER_TOKEN \
-            --build-arg ARG_PHONE_NUMBER_ID=$PHONE_NUMBER_ID \
-            --build-arg ARG_WHATSAPP_BUSINESS_ACCOUNT_ID=$WHATSAPP_BUSINESS_ACCOUNT_ID \
-            --build-arg ARG_VERIFY_TOKEN=$VERIFY_TOKEN \
-            --build-arg ARG_GEMINI_API_KEY=$GEMINI_API_KEY \
-            --build-arg ARG_ENVIRONMENT=$ENVIRONMENT \
-            --build-arg ARG_DATABASE_HOST=$DATABASE_HOST \
-            --build-arg ARG_DATABASE_NAME=$DATABASE_NAME \
-            --build-arg ARG_DATABASE_NAME=$DATABASE_NAME \
-            --build-arg ARG_DATABASE_USER=$DATABASE_USER \
-            --build-arg ARG_DATABASE_PASSWORD=$DATABASE_PASSWORD \
-            --build-arg ARG_DATABASE_PORT=$DATABASE_PORT \
-            --build-arg ARG_REDIS_URL=$REDIS_URL \
-            --build-arg ARG_JWT_SECRET_KEY=$JWT_SECRET_KEY \
-            -t ${DOCKER_IMAGE} .
-
-          docker push ${DOCKER_IMAGE}
+          docker build -t ${{ env.DOCKER_IMAGE }} .
+          docker push ${{ env.DOCKER_IMAGE }}
 
       - name: Deploy to Cloud Run
-        env:
-          SERVICE_NAME: ${{ env.SERVICE_NAME }}
-          DOCKER_IMAGE: ${{ env.DOCKER_IMAGE }}
-          REGION: ${{ env.REGION }}
         run: |
-          gcloud run deploy ${SERVICE_NAME} \
-            --image=${DOCKER_IMAGE} \
-            --region=$REGION \
+          gcloud run deploy biz-assist-service-account \
+            --image=${{ env.DOCKER_IMAGE }} \
+            --region=us-west2 \
             --platform=managed \
             --allow-unauthenticated \
-            --port=8080
+            --port=8080 \
+            --memory=512Mi \
+            --timeout=60 \
+            --set-env-vars="\
+              ENVIRONMENT=production,\
+              PHONE_NUMBER_ID=${{ secrets.PHONE_NUMBER_ID }},\
+              VERIFY_TOKEN=${{ secrets.VERIFY_TOKEN }},\
+              CHAT_USER_TOKEN=${{ secrets.CHAT_USER_TOKEN }},\
+              GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }},\
+              DATABASE_HOST=${{ secrets.DATABASE_HOST }},\
+              DATABASE_NAME=${{ secrets.DATABASE_NAME }},\
+              DATABASE_USER=${{ secrets.DATABASE_USER }},\
+              DATABASE_PASSWORD=${{ secrets.DATABASE_PASSWORD }},\
+              DATABASE_PORT=${{ secrets.DATABASE_PORT }},\
+              SECRET_KEY=${{ secrets.JWT_SECRET_KEY }},\
+              WHATSAPP_BUSINESS_ACCOUNT_ID=${{ secrets.WHATSAPP_BUSINESS_ACCOUNT_ID }}"
+
+
+
+
+
+
+
+# name: Deploy BizAssist FastAPI
+
+# on:
+#   push:
+#     branches: [ "main" ]
+
+# jobs:
+#   deploy:
+#     runs-on: ubuntu-latest
+
+#     permissions:
+#       contents: read
+#       id-token: write
+
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v3
+
+#       - name: Authenticate GCP
+#         env:
+#           GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
+#         run: |
+#           echo "$GOOGLE_APPLICATION_CREDENTIALS" > $HOME/gcloud.json
+#           gcloud auth activate-service-account --key-file=$HOME/gcloud.json
+
+#       - name: Setup gcloud
+#         uses: google-github-actions/setup-gcloud@v2
+#         with:
+#           project_id: ${{ secrets.GOOGLE_PROJECT }}
+
+#       - name: Set env vars
+#         run: |
+#           echo "IMAGE_TAG=$(date +'%Y%m%d%H%M%S')" >> $GITHUB_ENV
+#           echo "REGION=us-west2" >> $GITHUB_ENV
+#           echo "SERVICE_NAME=biz-assist-service-account" >> $GITHUB_ENV
+
+#           echo "CHAT_USER_TOKEN"=${{ secrets.CHAT_USER_TOKEN }} >> $GITHUB_ENV
+#           echo "PHONE_NUMBER_ID"=${{ secrets.PHONE_NUMBER_ID }} >> $GITHUB_ENV
+#           echo "WHATSAPP_BUSINESS_ACCOUNT_ID"=${{ secrets.WHATSAPP_BUSINESS_ACCOUNT_ID }} >> $GITHUB_ENV
+
+#           echo "VERIFY_TOKEN"=${{ secrets.VERIFY_TOKEN }} >> $GITHUB_ENV
+#           echo "GEMINI_API_KEY"=${{ secrets.GEMINI_API_KEY }} >> $GITHUB_ENV
+#           echo "ENVIRONMENT"=${{ secrets.ENVIRONMENT }} >> $GITHUB_ENV
+
+#           echo "DATABASE_HOST"=${{ secrets.DATABASE_HOST }} >> $GITHUB_ENV
+#           echo "DATABASE_NAME"=${{ secrets.DATABASE_NAME }} >> $GITHUB_ENV
+#           echo "DATABASE_PORT"=${{ secrets.DATABASE_PORT }} >> $GITHUB_ENV
+#           echo "DATABASE_USER"=${{ secrets.DATABASE_USER }} >> $GITHUB_ENV
+#           echo "DATABASE_PASSWORD"=${{ secrets.DATABASE_PASSWORD }} >> $GITHUB_ENV
+
+#       - name: Set Docker image
+#         run: |
+#           echo "DOCKER_IMAGE=us-west2-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/bizassist-api-repo/bizassist-api:${{ env.IMAGE_TAG }}" >> $GITHUB_ENV
+
+#       - name: Build & Push Docker image
+#         env:
+#           DOCKER_IMAGE: ${{ env.DOCKER_IMAGE }}
+#         run: |
+#           gcloud auth configure-docker us-west2-docker.pkg.dev
+#           docker build \
+#             --build-arg ARG_CHAT_USER_TOKEN=$CHAT_USER_TOKEN \
+#             --build-arg ARG_PHONE_NUMBER_ID=$PHONE_NUMBER_ID \
+#             --build-arg ARG_WHATSAPP_BUSINESS_ACCOUNT_ID=$WHATSAPP_BUSINESS_ACCOUNT_ID \
+#             --build-arg ARG_VERIFY_TOKEN=$VERIFY_TOKEN \
+#             --build-arg ARG_GEMINI_API_KEY=$GEMINI_API_KEY \
+#             --build-arg ARG_ENVIRONMENT=$ENVIRONMENT \
+#             --build-arg ARG_DATABASE_HOST=$DATABASE_HOST \
+#             --build-arg ARG_DATABASE_NAME=$DATABASE_NAME \
+#             --build-arg ARG_DATABASE_NAME=$DATABASE_NAME \
+#             --build-arg ARG_DATABASE_USER=$DATABASE_USER \
+#             --build-arg ARG_DATABASE_PASSWORD=$DATABASE_PASSWORD \
+#             --build-arg ARG_DATABASE_PORT=$DATABASE_PORT \
+#             --build-arg ARG_REDIS_URL=$REDIS_URL \
+#             --build-arg ARG_JWT_SECRET_KEY=$JWT_SECRET_KEY \
+#             -t ${DOCKER_IMAGE} .
+
+#           docker push ${DOCKER_IMAGE}
+
+#       - name: Deploy to Cloud Run
+#         env:
+#           SERVICE_NAME: ${{ env.SERVICE_NAME }}
+#           DOCKER_IMAGE: ${{ env.DOCKER_IMAGE }}
+#           REGION: ${{ env.REGION }}
+#         run: |
+#           gcloud run deploy ${SERVICE_NAME} \
+#             --image=${DOCKER_IMAGE} \
+#             --region=$REGION \
+#             --platform=managed \
+#             --allow-unauthenticated \
+#             --port=8080
