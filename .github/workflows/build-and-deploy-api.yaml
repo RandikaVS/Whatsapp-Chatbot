@@ -89,5 +89,4 @@ jobs:
             --region=$REGION \
             --platform=managed \
             --allow-unauthenticated \
-            --port=8080 \
-            --set-env-vars="REDIS_URL=${{ secrets.REDIS_URL }},DATABASE_HOST=${{ secrets.DATABASE_HOST }},DATABASE_NAME=${{ secrets.DATABASE_NAME }},DATABASE_USER=${{ secrets.DATABASE_USER }},DATABASE_PASSWORD=${{ secrets.DATABASE_PASSWORD }},DATABASE_PORT=${{ secrets.DATABASE_PORT }},CHAT_USER_TOKEN=${{ secrets.CHAT_USER_TOKEN }},PHONE_NUMBER_ID=${{ secrets.PHONE_NUMBER_ID }},VERIFY_TOKEN=${{ secrets.VERIFY_TOKEN }},GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }},JWT_SECRET_KEY=${{ secrets.JWT_SECRET_KEY }},ENVIRONMENT=production"
+            --port=8080 
