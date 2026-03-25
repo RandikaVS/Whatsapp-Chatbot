@@ -3,7 +3,7 @@ from fastapi import APIRouter, Request, HTTPException, Query, BackgroundTasks, D
 import httpx
 import logging
 from ..config import settings
-from ..services.session import SessionService, update_customer_message_timestamp, is_within_24h_window, is_duplicate
+from ..services.session import SessionService, is_within_24h_window, is_duplicate
 from ..helpers.webhook import detect_event_type, generate_ai_reply, handle_status_update,send_template_message,send_text_message,send_button_message,mark_as_read,extract_user_text,send_list_message,build_product_sections,get_products_for_tenant,create_order,_send_product_list,get_product_by_id,_format_product_details
 from ..database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -116,12 +116,11 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
 
         if user_text.strip().lower() in ["hi", "hello", "hey", "start", "menu", "help"]:
             await clear_flow_state(phone)
-            step = "idle"
+            step = settings.FLOW_STEPS_DICT[0]
 
-        # ══════════════════════════════════════════════════════════
-        # STEP: idle — show main menu
-        # ══════════════════════════════════════════════════════════
-        if step == "idle":
+        # Getting Main Menu Input
+        if step == settings.FLOW_STEPS_DICT[0]:
+
             greeting = f"Hi {customer_name}! 👋" if customer_name else "Hello! 👋"
             await send_button_message(
                 phone=phone,
@@ -139,10 +138,9 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
             await save_message(phone, tenant_id, "assistant", "[Sent main menu]")
             return
 
-        # ══════════════════════════════════════════════════════════
-        # STEP: main_menu — handle button tap
-        # ══════════════════════════════════════════════════════════
-        if step == "main_menu":
+        # Sending Product/Order or Support
+        if step == settings.FLOW_STEPS_DICT[1]:
+
             if user_text == "flow_browse" or "browse" in user_text.lower() or "product" in user_text.lower():
                 await _send_product_list(phone, tenant_id, customer_name)
                 await set_flow_state(phone, {"step": "browsing"})
@@ -171,21 +169,21 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
                 return
 
             else:
-                # Unexpected input at menu — re-show menu
+                
                 await clear_flow_state(phone)
                 await process_and_reply(phone, "hi", tenant_id, wa_message_id, customer_name)
                 return
 
-        # ══════════════════════════════════════════════════════════
-        # STEP: browsing — user selected a product from the list
-        # ══════════════════════════════════════════════════════════
-        if step == "browsing":
+        # Selecting Product
+        if step == settings.FLOW_STEPS_DICT[2]:
+
             if user_text.startswith("[PRODUCT_SELECTED:"):
+
                 _, product_id, product_name = user_text.split(":", 2)
                 product_name = product_name.rstrip("]")
 
-                # Load product details
                 product = await get_product_by_id(product_id)
+
                 if not product:
                     await send_text_message(phone, "Sorry, that product is no longer available.")
                     await clear_flow_state(phone)
@@ -209,14 +207,12 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
                 await save_message(phone, tenant_id, "assistant", f"[Showed product detail: {product_name}]")
                 return
             else:
-                # They typed instead of selecting — re-show list
                 await _send_product_list(phone, tenant_id, customer_name)
                 return
 
-        # ══════════════════════════════════════════════════════════
-        # STEP: product_detail — customer chose to order or go back
-        # ══════════════════════════════════════════════════════════
-        if step == "product_detail":
+        # Sending Product Detail
+        if step == settings.FLOW_STEPS_DICT[3]:
+
             product_id   = flow.get("product_id")
             product_name = flow.get("product_name")
 
@@ -247,10 +243,8 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
                 await save_message(phone, tenant_id, "assistant", reply)
                 return
 
-        # ══════════════════════════════════════════════════════════
-        # STEP: collect_quantity
-        # ══════════════════════════════════════════════════════════
-        if step == "collect_quantity":
+        # Getting QTY
+        if step == settings.FLOW_STEPS_DICT[4]:
             if not user_text.strip().isdigit() or int(user_text.strip()) < 1:
                 await send_text_message(phone, "Please enter a valid quantity (e.g. 1, 2, 3):")
                 return
@@ -262,10 +256,8 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
             await save_message(phone, tenant_id, "assistant", reply)
             return
 
-        # ══════════════════════════════════════════════════════════
-        # STEP: collect_size
-        # ══════════════════════════════════════════════════════════
-        if step == "collect_size":
+        # Getting Address
+        if step == settings.FLOW_STEPS_DICT[5]:
             size = user_text.strip()
             await set_flow_state(phone, {**flow, "step": "collect_address", "size": size})
             reply = "📍 What is your *delivery address*?"
@@ -273,10 +265,8 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
             await save_message(phone, tenant_id, "assistant", reply)
             return
 
-        # ══════════════════════════════════════════════════════════
-        # STEP: collect_address
-        # ══════════════════════════════════════════════════════════
-        if step == "collect_address":
+        # Getting Order Confirmation
+        if step == settings.FLOW_STEPS_DICT[6]:
             address = user_text.strip()
             await set_flow_state(phone, {**flow, "step": "confirm_order", "address": address})
 
@@ -302,12 +292,12 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
             await save_message(phone, tenant_id, "assistant", summary)
             return
 
-        # ══════════════════════════════════════════════════════════
-        # STEP: confirm_order — final confirmation
-        # ══════════════════════════════════════════════════════════
-        if step == "confirm_order":
+        # Confirm Order
+        if step == settings.FLOW_STEPS_DICT[7]:
+
             if user_text in ("flow_confirm", "✅ Confirm Order"):
-                order_id = await create_order(phone, tenant_id, flow)  # see step 3 below
+
+                order_id = await create_order(phone, tenant_id, flow) 
                 reply = (
                     f"🎉 *Order Placed Successfully!*\n\n"
                     f"Your order ID is *{order_id}*.\n"
@@ -320,16 +310,16 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
                 return
 
             elif user_text in ("flow_cancel", "❌ Cancel"):
+
                 reply = "Order cancelled. No problem! Type *hi* to start again. 😊"
                 await send_text_message(phone, reply)
                 await save_message(phone, tenant_id, "assistant", reply)
                 await clear_flow_state(phone)
                 return
 
-        # ══════════════════════════════════════════════════════════
-        # STEP: support — pass to AI
-        # ══════════════════════════════════════════════════════════
-        if step == "support":
+        # Selecting Support 
+        if step == settings.FLOW_STEPS_DICT[8]:
+
             reply_text = await generate_ai_reply(user_text, phone)
             await save_message(phone, tenant_id, "assistant", reply_text)
             within_window = await is_within_24h_window(phone)
@@ -341,9 +331,7 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
                 await send_template_message(phone)
             return
 
-        # ══════════════════════════════════════════════════════════
-        # Fallback — treat as new conversation
-        # ══════════════════════════════════════════════════════════
+
         await clear_flow_state(phone)
         await process_and_reply(phone, "hi", tenant_id, wa_message_id, customer_name)
 

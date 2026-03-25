@@ -405,8 +405,17 @@ def _format_product_details(product) -> str:
 
 async def get_product_by_id(product_id: str):
     from src.models.product import Product
+    from sqlalchemy import select
+
     async with AsyncSessionLocal() as db:
-        return await db.get(Product, product_id)
+        result = await db.execute(
+            select(Product).where(
+                Product.id == product_id,
+                Product.is_available == True
+            )
+        )
+
+        return result.scalar_one_or_none()
 
 
 async def _send_product_list(phone: str, tenant_id: str, customer_name: str = None):

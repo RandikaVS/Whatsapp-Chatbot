@@ -2,6 +2,7 @@ from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 import os
 import psycopg2
+from typing import ClassVar, Dict
 
 load_dotenv()
 
@@ -48,18 +49,17 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30   # access token lives 30 minutes
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7      # refresh token lives 7 days
 
-
-    FLOW_STEPS_DICT = dict(
-            "idle",
-            "main_menu",
-            "browsing",
-            "product_detail",
-            "collect_quantity",
-            "collect_size",
-            "collect_address",
-            "confirm_order",
-            "support",
-    )
+    FLOW_STEPS_DICT: ClassVar[Dict[int, str]] = {
+        0: "idle",
+        1: "main_menu",
+        2: "browsing",
+        3: "product_detail",
+        4: "collect_quantity",
+        5: "collect_size",
+        6: "collect_address",
+        7: "confirm_order",
+        8: "support",
+    }
 
         
 settings = Settings()
