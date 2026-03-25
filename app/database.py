@@ -18,6 +18,8 @@ AsyncSessionLocal = async_sessionmaker(
 class Base(DeclarativeBase):
     pass
 
+
+
 # This is a FastAPI dependency — the "async with" pattern is the
 # correct way to manage async SQLAlchemy sessions. It guarantees
 # the session is properly closed even if an exception occurs.
