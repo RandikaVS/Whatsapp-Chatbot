@@ -61,5 +61,94 @@ class Settings(BaseSettings):
         8: "support",
     }
 
+    DEFAULT_STEPS = [
+        {
+            "step_index": 0, "step_key": "idle", "display_name": "Idle / Entry",
+            "is_enabled": True,
+            "description": "Triggered when customer says hi/hello/start/help",
+            "message": "Hi {{customer_name}}! 👋 Welcome to *{{business_name}}*!\n\nHow can I help you today?",
+            "buttons": [
+                {"id": "flow_browse",  "title": "🛍️ Browse Products"},
+                {"id": "flow_order",   "title": "📦 My Orders"},
+                {"id": "flow_support", "title": "💬 Support"},
+            ],
+        },
+        {
+            "step_index": 1, "step_key": "main_menu", "display_name": "Main Menu",
+            "is_enabled": True,
+            "description": "Routes customer to Browse, Orders, or Support",
+            "message": "Please choose an option below:",
+            "buttons": [
+                {"id": "flow_browse",  "title": "🛍️ Browse Products"},
+                {"id": "flow_order",   "title": "📦 My Orders"},
+                {"id": "flow_support", "title": "💬 Support"},
+            ],
+        },
+        {
+            "step_index": 2, "step_key": "browsing", "display_name": "Product Browser",
+            "is_enabled": True,
+            "description": "Shows product list from catalog as WhatsApp list",
+            "message": "Here are our available products 👇\n\nTap a product to see details and order.",
+            "buttons": [],
+        },
+        {
+            "step_index": 3, "step_key": "product_detail", "display_name": "Product Detail",
+            "is_enabled": True,
+            "description": "Shows product details with Order / Back buttons",
+            "message": "{{product_details}}",
+            "buttons": [
+                {"id": "flow_add_to_order", "title": "✅ Order This"},
+                {"id": "flow_back",         "title": "◀️ Back to List"},
+                {"id": "flow_main_menu",    "title": "🏠 Main Menu"},
+            ],
+        },
+        {
+            "step_index": 4, "step_key": "collect_quantity", "display_name": "Collect Quantity",
+            "is_enabled": True,
+            "description": "Asks how many units the customer wants",
+            "message": "Great choice! 🎉 You selected *{{product_name}}*.\n\nPlease enter the *quantity* you'd like to order:",
+            "buttons": [],
+        },
+        {
+            "step_index": 5, "step_key": "collect_size", "display_name": "Collect Size",
+            "is_enabled": True,
+            "description": "Asks customer for their size",
+            "message": "What *size* do you need? (e.g. 40, 42, 44)",
+            "buttons": [],
+        },
+        {
+            "step_index": 6, "step_key": "collect_address", "display_name": "Collect Address",
+            "is_enabled": True,
+            "description": "Asks for delivery address",
+            "message": "📍 What is your *delivery address*?",
+            "buttons": [],
+        },
+        {
+            "step_index": 7, "step_key": "confirm_order", "display_name": "Order Confirmation",
+            "is_enabled": True,
+            "description": "Shows order summary and asks for confirmation",
+            "message": (
+                "📋 *Order Summary*\n\n"
+                "Product : {{product_name}}\n"
+                "Size    : {{size}}\n"
+                "Qty     : {{quantity}}\n"
+                "Address : {{address}}\n"
+                "Total   : {{currency}} {{total}}\n\n"
+                "Delivery in 2-3 business days. 🚚"
+            ),
+            "buttons": [
+                {"id": "flow_confirm", "title": "✅ Confirm Order"},
+                {"id": "flow_cancel",  "title": "❌ Cancel"},
+            ],
+        },
+        {
+            "step_index": 8, "step_key": "support", "display_name": "AI Support Chat",
+            "is_enabled": True,
+            "description": "Hands off to AI using system prompt from My Agent settings",
+            "message": "💬 *Support*\n\nTell me what you need help with and I'll assist you right away.",
+            "buttons": [],
+        },
+    ]
+
         
 settings = Settings()

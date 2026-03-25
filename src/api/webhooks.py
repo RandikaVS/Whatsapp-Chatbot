@@ -5,7 +5,7 @@ import logging
 import redis.asyncio as redis
 from ..config import settings
 from ..services.session import SessionService, is_within_24h_window, is_duplicate
-from ..helpers.webhook import detect_event_type, generate_ai_reply, handle_status_update,send_template_message,send_text_message,send_button_message,mark_as_read,extract_user_text,send_list_message,build_product_sections,get_products_for_tenant,create_order,_send_product_list,get_product_by_id,_format_product_details
+from ..helpers.webhook import detect_event_type, generate_ai_reply, handle_status_update,send_template_message,send_text_message,send_button_message,mark_as_read,extract_user_text,send_list_message,build_product_sections,get_products_for_tenant,create_order,_send_product_list,get_product_by_id,_format_product_details,get_step_message
 from ..database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..services.conversation import is_human_takeover_active, set_human_takeover
@@ -123,18 +123,23 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
         # Getting Main Menu Input
         if step == settings.FLOW_STEPS_DICT[0]:
 
-            greeting = f"Hi {customer_name}! 👋" if customer_name else "Hello! 👋"
+            # step_config = await get_step_message(tenant_id, "idle", db)
+            # message     = step_config.get("message", "Hello!").replace(
+            #     "{{customer_name}}", customer_name or "there"
+            # ).replace(
+            #     "{{business_name}}", tenant.business_name
+            # )
+            # buttons = step_config.get("buttons", [])
+
+            step_config     = await get_step_message(tenant_id, "idle", db)
+            message = step_config["message"] \
+                .replace("{{customer_name}}", customer_name or "there") \
+                .replace("{{business_name}}", tenant.business_name)
+
             await send_button_message(
                 phone=phone,
-                body_text=(
-                    f"{greeting} Welcome to *{tenant.business_name}*!\n\n"
-                    "How can I help you today?"
-                ),
-                buttons=[
-                    {"id": "flow_browse",   "title": "🛍️ Browse Products"},
-                    {"id": "flow_order",    "title": "📦 My Orders"},
-                    {"id": "flow_support",  "title": "💬 Support"},
-                ],
+                body_text=message,
+                buttons=step_config["buttons"],
             )
             await set_flow_state(phone, {"step": "main_menu"}, redis_client)
             await save_message(phone, tenant_id, "assistant", "[Sent main menu]")
@@ -149,6 +154,7 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
                 return
 
             elif user_text == "flow_order" or "order" in user_text.lower():
+                cfg     = await get_step_message(tenant_id, "main_menu", db)
                 reply = (
                     "📦 *Order Tracking*\n\n"
                     "Please share your order number and we'll look it up for you.\n"
@@ -160,14 +166,12 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
                 return
 
             elif user_text == "flow_support" or "support" in user_text.lower():
-                reply = (
-                    "💬 *Support*\n\n"
-                    "Tell me what you need help with and I'll assist you, "
-                    "or I can connect you with our team."
-                )
-                await send_text_message(phone, reply)
+
+                cfg = await get_step_message(tenant_id, "support", db)
+
+                await send_text_message(phone, cfg["message"])
                 await set_flow_state(phone, {"step": "support"},redis_client)
-                await save_message(phone, tenant_id, "assistant", reply)
+                await save_message(phone, tenant_id, "assistant", cfg["message"])
                 return
 
             else:
@@ -190,16 +194,12 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
                     await send_text_message(phone, "Sorry, that product is no longer available.")
                     await clear_flow_state(phone,redis_client)
                     return
-
+                cfg     = await get_step_message(tenant_id, "product_detail", db)
                 details = _format_product_details(product)
                 await send_button_message(
                     phone=phone,
                     body_text=details,
-                    buttons=[
-                        {"id": "flow_add_to_order", "title": "✅ Order This"},
-                        {"id": "flow_back",         "title": "◀️ Back to List"},
-                        {"id": "flow_main_menu",    "title": "🏠 Main Menu"},
-                    ],
+                    buttons=cfg["buttons"],
                 )
                 await set_flow_state(phone, {
                     "step": "product_detail",
@@ -229,12 +229,13 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
                 return
 
             elif user_text in ("flow_add_to_order", "✅ Order This"):
+
                 product = await get_product_by_id(product_id)
-                reply = (
-                    f"Great choice! 🎉 You selected *{product_name}*.\n\n"
-                    f"Please enter the *quantity* you'd like to order:"
-                )
-                await send_text_message(phone, reply)
+
+                cfg     = await get_step_message(tenant_id, "collect_quantity", db)
+                message = cfg["message"].replace("{{product_name}}", product_name or "")
+ 
+                await send_text_message(phone, message)
                 await set_flow_state(phone, {
                     "step": "collect_quantity",
                     "product_id": product_id,
@@ -242,7 +243,7 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
                     "price": product.price,
                     "currency": product.currency,
                 },redis_client)
-                await save_message(phone, tenant_id, "assistant", reply)
+                await save_message(phone, tenant_id, "assistant", message)
                 return
 
         # Getting QTY
@@ -252,19 +253,19 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
                 return
 
             qty = int(user_text.strip())
+            cfg = await get_step_message(tenant_id, "collect_size", db)
             await set_flow_state(phone, {**flow, "step": "collect_size", "quantity": qty},redis_client)
-            reply = "What *size* do you need? (e.g. 40, 42, 44)"
-            await send_text_message(phone, reply)
-            await save_message(phone, tenant_id, "assistant", reply)
+            await send_text_message(phone, cfg["message"])
+            await save_message(phone, tenant_id, "assistant", cfg["message"])
             return
 
         # Getting Address
         if step == settings.FLOW_STEPS_DICT[5]:
             size = user_text.strip()
             await set_flow_state(phone, {**flow, "step": "collect_address", "size": size},redis_client)
-            reply = "📍 What is your *delivery address*?"
-            await send_text_message(phone, reply)
-            await save_message(phone, tenant_id, "assistant", reply)
+            cfg  = await get_step_message(tenant_id, "collect_address", db)
+            await send_text_message(phone, cfg["message"])
+            await save_message(phone, tenant_id, "assistant", cfg["message"])
             return
 
         # Getting Order Confirmation
@@ -274,24 +275,21 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
 
             # Show order summary for confirmation
             total = flow.get("price", 0) * flow.get("quantity", 1)
-            summary = (
-                f"📋 *Order Summary*\n\n"
-                f"Product : {flow['product_name']}\n"
-                f"Size    : {flow.get('size', 'N/A')}\n"
-                f"Qty     : {flow.get('quantity', 1)}\n"
-                f"Address : {address}\n"
-                f"Total   : {flow.get('currency', 'LKR')} {total:,.0f}\n\n"
-                f"Delivery in 2-3 business days. 🚚"
-            )
+            cfg     = await get_step_message(tenant_id, "confirm_order", db)
+            message = cfg["message"] \
+                .replace("{{product_name}}", flow.get("product_name", "N/A")) \
+                .replace("{{size}}",         flow.get("size", "N/A")) \
+                .replace("{{quantity}}",      str(flow.get("quantity", 1))) \
+                .replace("{{address}}",       address) \
+                .replace("{{currency}}",      flow.get("currency", "LKR")) \
+                .replace("{{total}}",         f"{total:,.0f}")
+            
             await send_button_message(
                 phone=phone,
-                body_text=summary,
-                buttons=[
-                    {"id": "flow_confirm", "title": "✅ Confirm Order"},
-                    {"id": "flow_cancel",  "title": "❌ Cancel"},
-                ],
+                body_text=message,
+                buttons=cfg["buttons"],
             )
-            await save_message(phone, tenant_id, "assistant", summary)
+            await save_message(phone, tenant_id, "assistant", message)
             return
 
         # Confirm Order

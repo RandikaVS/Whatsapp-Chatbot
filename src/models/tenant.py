@@ -6,7 +6,7 @@ from sqlalchemy import DateTime
 from sqlalchemy.orm import relationship
 import uuid
 from src.database import Base
-
+from sqlalchemy.dialects.postgresql import JSONB
 
 class Tenant(Base):
     __tablename__ = "tenant"
@@ -45,7 +45,7 @@ class Tenant(Base):
 
     # reply_delay_seconds adds a human-feeling pause before sending.
     reply_delay_seconds = Column(Integer, default=0)
-    flow_config = Column(JSON, default=None)
+    flow_config = Column(JSONB, nullable=True)
 
     # ── Plan and usage ────────────────────────────────────────────
     plan                  = Column(String, default="starter")

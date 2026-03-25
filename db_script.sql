@@ -597,6 +597,7 @@ WHERE table_name  = 'tenants'
 -- You can manually test a tenant's config with:
 /*
 UPDATE tenants
+
 SET flow_config = '{
   "steps": [
     {
@@ -610,8 +611,126 @@ SET flow_config = '{
         {"id": "flow_support", "title": "Support"}
       ],
       "description": "Entry point"
+    },
+    {
+      "step_index": 1,
+      "step_key": "main_menu",
+      "display_name": "Our Products",
+      "is_enabled": true,
+      "message": "what we have in stock. Tap to browse and select:",
+      "buttons": [
+        {"id": "flow_browse",  "title": "Browse"},
+        {"id": "flow_support", "title": "Support"}
+      ],
+      "description": "Entry point"
     }
   ]
 }'::jsonb
 WHERE email = 'test@abcshoes.lk';
 */
+
+-- SET flow_config = '{
+--   "steps": [
+--     {
+--       "step_index": 0,
+--       "step_key": "idle",
+--       "display_name": "Welcome",
+--       "is_enabled": true,
+--       "message": "Hi {{customer_name}}! 👋 Welcome to *{{business_name}}*!\\n\\nHow can I help you today?",
+--       "buttons": [
+--         {"id": "flow_browse",  "title": "🛍️ Browse Products"},
+--         {"id": "flow_order",   "title": "📦 My Orders"},
+--         {"id": "flow_support", "title": "💬 Support"}
+--       ],
+--       "description": "Entry point"
+--     },
+--     {
+--       "step_index": 1,
+--       "step_key": "main_menu",
+--       "display_name": "Main Menu",
+--       "is_enabled": true,
+--       "message": "Please choose an option below:",
+--       "buttons": [
+--         {"id": "flow_browse",  "title": "🛍️ Browse Products"},
+--         {"id": "flow_order",   "title": "📦 My Orders"},
+--         {"id": "flow_support", "title": "💬 Support"}
+--       ],
+--       "description": "Main options"
+--     },
+--     {
+--       "step_index": 2,
+--       "step_key": "browsing",
+--       "display_name": "Browse Products",
+--       "is_enabled": true,
+--       "message": "Here are our available products 👇\\n\\nTap a product to see details and order.",
+--       "buttons": [],
+--       "action": {
+--         "type": "product_list",
+--         "function": "_send_product_list"
+--       },
+--       "description": "Shows product list grouped by category"
+--     },
+--     {
+--       "step_index": 3,
+--       "step_key": "product_detail",
+--       "display_name": "Product Detail",
+--       "is_enabled": true,
+--       "message": "{{product_details}}",
+--       "buttons": [
+--         {"id": "flow_add_to_order", "title": "✅ Order This"},
+--         {"id": "flow_back",         "title": "◀️ Back to List"},
+--         {"id": "flow_main_menu",    "title": "🏠 Main Menu"}
+--       ],
+--       "description": "Shows selected product details"
+--     },
+--     {
+--       "step_index": 4,
+--       "step_key": "collect_quantity",
+--       "display_name": "Collect Quantity",
+--       "is_enabled": true,
+--       "message": "Great choice! 🎉 You selected *{{product_name}}*.\\n\\nPlease enter the *quantity* you'd like to order:",
+--       "buttons": [],
+--       "description": "Ask quantity"
+--     },
+--     {
+--       "step_index": 5,
+--       "step_key": "collect_size",
+--       "display_name": "Collect Size",
+--       "is_enabled": true,
+--       "message": "What *size* do you need? (e.g. 40, 42, 44)",
+--       "buttons": [],
+--       "description": "Ask size"
+--     },
+--     {
+--       "step_index": 6,
+--       "step_key": "collect_address",
+--       "display_name": "Collect Address",
+--       "is_enabled": true,
+--       "message": "📍 What is your *delivery address*?",
+--       "buttons": [],
+--       "description": "Ask delivery address"
+--     },
+--     {
+--       "step_index": 7,
+--       "step_key": "confirm_order",
+--       "display_name": "Confirm Order",
+--       "is_enabled": true,
+--       "message": "📋 *Order Summary*\\n\\nProduct : {{product_name}}\\nSize    : {{size}}\\nQty     : {{quantity}}\\nAddress : {{address}}\\nTotal   : {{currency}} {{total}}\\n\\nDelivery in 2-3 business days. 🚚",
+--       "buttons": [
+--         {"id": "flow_confirm", "title": "✅ Confirm Order"},
+--         {"id": "flow_cancel",  "title": "❌ Cancel"}
+--       ],
+--       "description": "Final confirmation"
+--     },
+--     {
+--       "step_index": 8,
+--       "step_key": "support",
+--       "display_name": "Support",
+--       "is_enabled": true,
+--       "message": "💬 *Support*\\n\\nTell me what you need help with and I'll assist you right away.",
+--       "buttons": [],
+--       "description": "Customer support"
+--     }
+--   ]
+-- }'::jsonb
+-- WHERE email = 'test@abcshoes.lk';

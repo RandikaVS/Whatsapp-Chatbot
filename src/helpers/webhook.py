@@ -475,3 +475,52 @@ async def create_order(phone: str, tenant_id: str, flow: dict) -> str:
     #     db.add(order)
     #     await db.commit()
     # return order_id
+
+# async def get_step_message(tenant_id: str, step_key: str, db) -> dict:
+#     """
+#     Fetches the tenant's customized step config at runtime.
+#     Falls back to defaults if nothing is saved.
+#     """
+#     from src.models.tenant import Tenant
+#     tenant = await db.get(Tenant, tenant_id)
+    
+#     if tenant.flow_config:
+#         steps = tenant.flow_config.get("steps", [])
+#         for step in steps:
+#             if step.get("step_key") == step_key:
+#                 return step
+    
+#     # Fall back to default for this step
+#     return settings.DEFAULT_STEPS.get(step_key, {})
+
+async def get_step_message(tenant_id: str, step_key: str, db) -> dict:
+    """
+    Returns {"message": str, "buttons": list} for a given step.
+
+    Priority:
+      1. Tenant's saved flow_config in DB  (if that step exists and is_enabled)
+      2. DEFAULT_STEPS fallback
+    """
+    from sqlalchemy import select
+    from src.models.tenant import Tenant
+
+    try:
+        result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
+        tenant = result.scalar_one_or_none()
+
+        if tenant and tenant.flow_config:
+            config = tenant.flow_config if isinstance(tenant.flow_config, dict) \
+                     else __import__("json").loads(tenant.flow_config)
+
+            for step in config.get("steps", []):
+                if step.get("step_key") == step_key:
+                    if not step.get("is_enabled", True):
+                        break  # step disabled → fall through to default
+                    return {
+                        "message": step.get("message", settings.DEFAULT_STEPS[step_key]["message"]),
+                        "buttons": step.get("buttons", settings.DEFAULT_STEPS[step_key]["buttons"]),
+                    }
+    except Exception:
+        pass  # any DB/parse error → silently use defaults
+
+    return settings.DEFAULT_STEPS.get(step_key, {"message": "", "buttons": []})
