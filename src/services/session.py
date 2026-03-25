@@ -3,16 +3,8 @@ import json
 from src.config import settings
 import time
 
-class _NoOpRedis:
-    async def get(self, key): return None
-    async def set(self, *a, **kw): return True
-    async def setex(self, *a, **kw): pass
-    async def delete(self, *a, **kw): pass
 
-redis_client = _NoOpRedis()
-
-# redis_client = redis.from_url(settings.REDIS_URL)
-
+redis_client = redis.from_url(settings.REDIS_URL,encoding="utf-8",decode_responses=True)
 
 
 class SessionService:
@@ -46,11 +38,6 @@ async def is_within_24h_window(phone: str) -> bool:
     if not ts:
         return False
     return (time.time() - float(ts)) < 86400  # 86400 seconds = 24 hours
-
-async def update_customer_message_timestamp(phone: str):
-    
-    key = f"last_customer_msg:{phone}"
-    await redis_client.setex(key, 86400, str(time.time()))
 
 
 

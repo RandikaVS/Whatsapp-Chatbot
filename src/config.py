@@ -21,7 +21,7 @@ class Settings(BaseSettings):
 
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "meta_chatbot_secret_key")
 
-    REDIS_URL: str = os.getenv("REDIS_URL", "redis://0.0.0.0:6379")
+    REDIS_URL: str = os.getenv("REDIS_URL", "rediss://default:gQAAAAAAAUkQAAIncDI4MzBkYmQ5NzlmNDU0YTE2OTVhZjcyNmVhNzJkYmNjMnAyODQyNDA@crucial-mouse-84240.upstash.io:6379")
 
     SQLALCHEMY_DATABASE_URI: str = 'postgresql+asyncpg://' \
                             + os.environ.get('DATABASE_USER') + ':' \
