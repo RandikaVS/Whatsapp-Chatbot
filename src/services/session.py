@@ -5,7 +5,8 @@ import time
 import os
 
 
-# redis_client = redis.Redis.from_url(settings.REDIS_URL)
+redis_client = redis.Redis.from_url(settings.REDIS_URL,encoding="utf-8",
+        decode_responses=True)
 
 
 def get_redis():

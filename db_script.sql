@@ -558,3 +558,60 @@ ALTER TABLE tenants
 UPDATE tenants
 SET password_hash = '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4J/HS.iZTi'
 WHERE email = 'test@abcshoes.lk';
+
+
+-- ============================================================
+-- MIGRATION: Add flow_config column to tenants table
+--
+-- The flow_config stores the tenant's customized conversation
+-- flow as a JSONB column. JSONB (not JSON) because:
+-- 1. PostgreSQL can index into it for queries
+-- 2. It validates JSON on insert — no malformed configs
+-- 3. It's stored in binary format, faster to read
+--
+-- Run this once in Supabase SQL Editor.
+-- ============================================================
+
+ALTER TABLE tenants
+    ADD COLUMN IF NOT EXISTS flow_config JSONB DEFAULT NULL;
+
+-- Add a comment so future developers know what this stores
+COMMENT ON COLUMN tenants.flow_config IS
+    'Tenant-customized conversation flow steps stored as JSON. '
+    'NULL means use system defaults. '
+    'Shape: { steps: [{ step_key, step_index, display_name, is_enabled, message, buttons, description }] }';
+
+
+-- ── Verify ────────────────────────────────────────────────────
+SELECT
+    column_name,
+    data_type,
+    column_default,
+    is_nullable
+FROM information_schema.columns
+WHERE table_name  = 'tenants'
+  AND column_name = 'flow_config';
+
+
+-- ── Example of what a saved flow_config looks like ───────────
+-- You can manually test a tenant's config with:
+/*
+UPDATE tenants
+SET flow_config = '{
+  "steps": [
+    {
+      "step_index": 0,
+      "step_key": "idle",
+      "display_name": "Welcome",
+      "is_enabled": true,
+      "message": "Hello! Welcome to our store!",
+      "buttons": [
+        {"id": "flow_browse",  "title": "Browse"},
+        {"id": "flow_support", "title": "Support"}
+      ],
+      "description": "Entry point"
+    }
+  ]
+}'::jsonb
+WHERE email = 'test@abcshoes.lk';
+*/

@@ -1,5 +1,5 @@
 # src/models/tenant.py
-from sqlalchemy import Column, String, Boolean, Integer, Text, Numeric
+from sqlalchemy import Column, String, Boolean, Integer, Text, Numeric, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from sqlalchemy import DateTime
@@ -45,6 +45,7 @@ class Tenant(Base):
 
     # reply_delay_seconds adds a human-feeling pause before sending.
     reply_delay_seconds = Column(Integer, default=0)
+    flow_config = Column(JSON, default=None)
 
     # ── Plan and usage ────────────────────────────────────────────
     plan                  = Column(String, default="starter")

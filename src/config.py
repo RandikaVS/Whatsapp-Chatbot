@@ -16,9 +16,9 @@ class Settings(BaseSettings):
 
     DATABASE_NAME: str = os.getenv("DATABASE_NAME", "postgres")
     DATABASE_USER: str = os.getenv("DATABASE_USER", "postgres")
-    DATABASE_PASSWORD: str = os.getenv("DATABASE_PASSWORD", "sahanrandika")
+    DATABASE_PASSWORD: str = os.getenv("DATABASE_PASSWORD", "VhJmu3DjzkzVagip")
     DATABASE_PORT: str = os.getenv("DATABASE_PORT", "5432")
-    DATABASE_HOST: str = os.getenv("DATABASE_HOST", "0.0.0.0")
+    DATABASE_HOST: str = os.getenv("DATABASE_HOST", "db.ebjgtfcryrpzbagwqlio.supabase.co")
 
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "meta_chatbot_secret_key")
 

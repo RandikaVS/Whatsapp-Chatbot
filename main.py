@@ -7,6 +7,7 @@ from src.api.auth.auth import router as auth_router
 from src.api.agent import router as agent_router
 from src.api.auth.tenant_auth import router as tenant_auth_router
 from src.api.products import router as product_router
+from src.api.flow import router as flow_router
 
 def create_app():
 
@@ -26,6 +27,7 @@ def create_app():
     app.include_router(agent_router)
     app.include_router(tenant_auth_router)
     app.include_router(product_router)
+    app.include_router(flow_router)
 
 
 
