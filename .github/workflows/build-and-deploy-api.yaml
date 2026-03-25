@@ -55,8 +55,8 @@ jobs:
 
       - name: Set Docker image
         run: |
-          echo "DOCKER_IMAGE=us-west2-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/bizassist-api-repo/bizassist-api:${{ env.IMAGE_TAG }}" >> $GITHUB_ENV
-
+          echo "DOCKER_IMAGE=us-west2-docker.pkg.dev/dees-international/bizassist-meta-repo/bizassist-api:${{ env.IMAGE_TAG }}" >> $GITHUB_ENV
+          
       - name: Build & Push Docker image
         env:
           DOCKER_IMAGE: ${{ env.DOCKER_IMAGE }}
