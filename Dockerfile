@@ -28,16 +28,9 @@ ENV DATABASE_PORT=${ARG_DATABASE_PORT}
 ENV REDIS_URL=${ARG_REDIS_URL}
 ENV JWT_SECRET_KEY=${ARG_JWT_SECRET_KEY}
 
-WORKDIR /app
+WORKDIR /code
 
-RUN apt-get update && apt-get install -y \
-    libpq-dev \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade -r requirements.txt
-
-COPY ./app ./app         
-
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+COPY ./requirements.txt /code/requirements.txt
+RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
+COPY ./main.py /code/
+CMD ["fastapi", "run", "main.py", "--port", "8080"]
