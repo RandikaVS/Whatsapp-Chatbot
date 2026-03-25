@@ -17,11 +17,11 @@ class Settings(BaseSettings):
     DATABASE_USER: str = os.getenv("DATABASE_USER", "postgres")
     DATABASE_PASSWORD: str = os.getenv("DATABASE_PASSWORD", "sahanrandika")
     DATABASE_PORT: str = os.getenv("DATABASE_PORT", "5432")
-    DATABASE_HOST: str = os.getenv("DATABASE_HOST", "localhost")
+    DATABASE_HOST: str = os.getenv("DATABASE_HOST", "0.0.0.0")
 
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "meta_chatbot_secret_key")
 
-    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379")
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://0.0.0.0:6379")
 
     SQLALCHEMY_DATABASE_URI: str = 'postgresql+asyncpg://' \
                             + os.environ.get('DATABASE_USER') + ':' \
