@@ -123,14 +123,6 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
         # Getting Main Menu Input
         if step == settings.FLOW_STEPS_DICT[0]:
 
-            # step_config = await get_step_message(tenant_id, "idle", db)
-            # message     = step_config.get("message", "Hello!").replace(
-            #     "{{customer_name}}", customer_name or "there"
-            # ).replace(
-            #     "{{business_name}}", tenant.business_name
-            # )
-            # buttons = step_config.get("buttons", [])
-
             step_config     = await get_step_message(tenant_id, "idle", db)
             message = step_config["message"] \
                 .replace("{{customer_name}}", customer_name or "there") \

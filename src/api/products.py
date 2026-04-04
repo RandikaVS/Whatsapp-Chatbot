@@ -8,59 +8,18 @@ import csv
 import io
 import logging
 
+from src.schemas.product import ProductGetSchema,ProductCreate,ProductUpdate,ProductSchema
 from src.database import get_db
 from src.models.product import Product
 from src.helpers.tenant_dependency import get_current_tenant
 from src.models.tenant import Tenant
+from datetime import datetime
+import uuid
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/products", tags=["products"])
 
 
-# ── Schemas ───────────────────────────────────────────────────────────────────
-
-class ProductCreate(BaseModel):
-    name:             str
-    sku:              Optional[str]   = None
-    description:      Optional[str]  = None
-    category:         Optional[str]  = None
-    price:            Optional[float] = None
-    currency:         str             = "LKR"
-    stock_quantity:   int             = 0
-    is_available:     bool            = True
-    sizes_available:  Optional[str]  = None
-    colors_available: Optional[str]  = None
-
-
-class ProductUpdate(BaseModel):
-    name:             Optional[str]   = None
-    sku:              Optional[str]   = None
-    description:      Optional[str]  = None
-    category:         Optional[str]  = None
-    price:            Optional[float] = None
-    currency:         Optional[str]  = None
-    stock_quantity:   Optional[int]  = None
-    is_available:     Optional[bool] = None
-    sizes_available:  Optional[str]  = None
-    colors_available: Optional[str]  = None
-
-
-def product_to_dict(p: Product) -> dict:
-    return {
-        "id":               str(p.id),
-        "tenant_id":        str(p.tenant_id),
-        "name":             p.name,
-        "sku":              p.sku,
-        "description":      p.description,
-        "category":         p.category,
-        "price":            float(p.price) if p.price is not None else None,
-        "currency":         p.currency,
-        "stock_quantity":   p.stock_quantity,
-        "is_available":     p.is_available,
-        "sizes_available":  p.sizes_available,
-        "colors_available": p.colors_available,
-        "updated_at":       p.updated_at.isoformat() if p.updated_at else None,
-    }
 
 async def get_current_tenant_test(db):
 
@@ -75,51 +34,73 @@ async def get_current_tenant_test(db):
 
 
 @router.get("/list")
-async def list_products(
-    db:     AsyncSession = Depends(get_db),
-):
+async def list_products(db:AsyncSession = Depends(get_db)):
 
-    tenant = await get_current_tenant_test(db)
-    
-    result = await db.execute(
-        select(Product)
-        .where(Product.tenant_id == tenant.id)
-        .order_by(Product.category, Product.name)
-    )
-    products = result.scalars().all()
-    return {"products": [product_to_dict(p) for p in products]}
+    try:
 
+        tenant = await get_current_tenant_test(db)
+        
+        result = await db.execute(
+            select(Product)
+            .where(Product.tenant_id == tenant.id)
+            .order_by(Product.category, Product.name)
+        )
+        products = result.scalars().all()
+
+        return {
+            "products": [
+                ProductGetSchema.model_validate(Product.product_to_dict(p)).model_dump()
+                for p in products
+            ]
+        }
+    except Exception as e:
+        logger.error("Error listing products for tenant %s: %s", tenant.id if 'tenant' in locals() else 'unknown', str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while fetching products"
+        )
 
 
 @router.post("/add", status_code=status.HTTP_201_CREATED)
 async def add_product(
-    data:   ProductCreate,
-    db:     AsyncSession = Depends(get_db),
+    data: ProductCreate,
+    response_model=ProductGetSchema,
+    db: AsyncSession = Depends(get_db)
 ):
     
-    tenant = await get_current_tenant_test(db)
+    try:
 
+        tenant = await get_current_tenant_test(db)
 
-    product = Product(
-        tenant_id        = tenant.id,
-        name             = data.name.strip(),
-        sku              = data.sku.strip()              if data.sku              else None,
-        description      = data.description.strip()      if data.description      else None,
-        category         = data.category.strip().lower() if data.category         else None,
-        price            = data.price,
-        currency         = data.currency,
-        stock_quantity   = data.stock_quantity,
-        is_available     = data.is_available and data.stock_quantity > 0,
-        sizes_available  = data.sizes_available.strip()  if data.sizes_available  else None,
-        colors_available = data.colors_available.strip() if data.colors_available else None,
-    )
-    db.add(product)
-    await db.commit()
-    await db.refresh(product)
+        product = Product(
+            tenant_id        = tenant.id,
+            name             = data.name.strip(),
+            sku              = data.sku.strip() if data.sku else None,
+            description      = data.description.strip() if data.description else None,
+            category         = data.category.strip().lower() if data.category else None,
+            price            = data.price,
+            currency         = (data.currency or "LKR").strip(),
+            stock_quantity   = data.stock_quantity,
+            is_available     = data.is_available,
+            sizes_available  = data.sizes_available.strip() if data.sizes_available else None,
+            colors_available = data.colors_available.strip() if data.colors_available else None,
+        )
 
-    logger.info("Product added: %s by tenant %s", product.name, tenant.id)
-    return {"product": product_to_dict(product), "status": "created"}
+        db.add(product)
+        await db.commit()
+        await db.refresh(product)
 
+        return {
+            "product": response_model.model_validate(product).model_dump(),
+            "status": "created"
+        }
+    
+    except Exception as e:
+        logger.error("Error adding product for tenant %s: %s", tenant.id if 'tenant' in locals() else 'unknown', str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while adding the product"
+        )
 
 
 @router.put("/{product_id}")
@@ -161,7 +142,7 @@ async def update_product(
     await db.refresh(product)
 
     logger.info("Product updated: %s by tenant %s", product.name, tenant.id)
-    return {"product": product_to_dict(product), "status": "updated"}
+    return {"product": Product.product_to_dict(product), "status": "updated"}
 
 
 
