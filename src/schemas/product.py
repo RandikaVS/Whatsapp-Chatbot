@@ -56,6 +56,8 @@ class ProductCreate(BaseModel):
 
 
 class ProductUpdate(ProductSchema):
+    id:               Optional[UUID] = None
+    tenant_id:        Optional[UUID] = None
     name:             Optional[str]   = None
     sku:              Optional[str]   = None
     description:      Optional[str]  = None

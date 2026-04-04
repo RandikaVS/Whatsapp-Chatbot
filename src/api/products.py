@@ -111,11 +111,9 @@ async def update_product(
 ):
     tenant = await get_current_tenant_test(db)
 
-    import uuid as uuid_module
-
     result = await db.execute(
         select(Product).where(
-            Product.id        == uuid_module.UUID(product_id),
+            Product.id        == uuid.UUID(product_id),
             Product.tenant_id == tenant.id  # security: tenant can only edit their own products
         )
     )

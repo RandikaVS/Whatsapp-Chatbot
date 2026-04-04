@@ -77,7 +77,9 @@ async def _handle_incoming_message(value: dict, bg: BackgroundTasks, redis_clien
 
     from src.services.tenant import get_tenant_by_phone_number_id
 
+
     tenant = await get_tenant_by_phone_number_id(phone_number_id)
+
 
     if not tenant:
         logger.warning("Ignoring message — no tenant for phone_number_id=%s", phone_number_id)
@@ -97,7 +99,7 @@ async def _handle_incoming_message(value: dict, bg: BackgroundTasks, redis_clien
     bg.add_task(mark_as_read, msg_id)
 
     if should_reply:
-        bg.add_task(process_and_reply, phone, user_text, str(tenant.id), msg_id,customer_name, redis_client)
+        bg.add_task(process_and_reply, phone, user_text, tenant.id, msg_id,customer_name, redis_client)
 
 
 async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_message_id: str, customer_name: str = None, redis_client: redis.Redis = None):
@@ -124,6 +126,7 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
         if step == settings.FLOW_STEPS_DICT[0]:
 
             step_config     = await get_step_message(tenant_id, "idle", db)
+
             message = step_config["message"] \
                 .replace("{{customer_name}}", customer_name or "there") \
                 .replace("{{business_name}}", tenant.business_name)
@@ -134,7 +137,12 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
                 buttons=step_config["buttons"],
             )
             await set_flow_state(phone, {"step": "main_menu"}, redis_client)
-            await save_message(phone, tenant_id, "assistant", "[Sent main menu]")
+
+            reply = (
+                    "Sent main menu"
+            )
+
+            await save_message(phone, tenant_id, "assistant", reply)
             return
 
         # Sending Product/Order or Support
@@ -325,7 +333,7 @@ async def process_and_reply(phone: str, user_text: str, tenant_id: str, wa_messa
 
 
         await clear_flow_state(phone,redis_client)
-        await process_and_reply(phone, "hi", tenant_id, wa_message_id, customer_name)
+        await process_and_reply(phone, "hi", tenant_id, wa_message_id, customer_name, redis_client)
 
     except Exception as e:
         logger.exception("process_and_reply error for %s: %s", phone, e)

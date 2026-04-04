@@ -4,6 +4,7 @@ from src.services.session import SessionService
 import logging
 import httpx
 from src.database import AsyncSessionLocal
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -505,22 +506,36 @@ async def get_step_message(tenant_id: str, step_key: str, db) -> dict:
     from src.models.tenant import Tenant
 
     try:
-        result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
+        result = await db.execute(select(Tenant).where(Tenant.id == tenant_id ))
         tenant = result.scalar_one_or_none()
 
         if tenant and tenant.flow_config:
             config = tenant.flow_config if isinstance(tenant.flow_config, dict) \
                      else __import__("json").loads(tenant.flow_config)
+            
 
             for step in config.get("steps", []):
                 if step.get("step_key") == step_key:
                     if not step.get("is_enabled", True):
                         break  # step disabled → fall through to default
-                    return {
-                        "message": step.get("message", settings.DEFAULT_STEPS[step_key]["message"]),
-                        "buttons": step.get("buttons", settings.DEFAULT_STEPS[step_key]["buttons"]),
-                    }
-    except Exception:
-        pass  # any DB/parse error → silently use defaults
 
-    return settings.DEFAULT_STEPS.get(step_key, {"message": "", "buttons": []})
+                    default_step = next(
+                        (s for s in settings.DEFAULT_STEPS if s["step_key"] == step_key),
+                        None
+                    )
+                    return {
+                        "message": step.get("message", default_step.get("message","") if default_step else ""),
+                        "buttons": step.get("buttons", default_step.get("buttons",[]) if default_step else [])
+                    }
+    except Exception as e:
+        logger.error("Error fetching tenant flow config for tenant_id=%s: %s", tenant_id, exc_info=True)
+
+    default_step = next(
+        (s for s in settings.DEFAULT_STEPS if s["step_key"] == step_key),
+        None
+    )
+
+    return {
+        "message": default_step.get("message","") if default_step else "",
+        "buttons": default_step.get("buttons",[]) if default_step else []
+    }

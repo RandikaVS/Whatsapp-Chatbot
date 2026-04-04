@@ -51,8 +51,8 @@ async def get_or_create_conversation(
 
 
 async def save_message(
-    tenant_id: str,
     customer_phone: str,
+    tenant_id: str,
     role: str,
     content: str,
     wa_message_id: str = None,
